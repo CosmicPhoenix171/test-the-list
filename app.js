@@ -51,6 +51,8 @@ const JIKAN_API_BASE_URL = 'https://api.jikan.moe/v4';
 const MYANIMELIST_ANIME_URL = 'https://myanimelist.net/anime';
 const METADATA_SCHEMA_VERSION = 3;
 const APP_VERSION = 'test-pages-2025.11.15';
+const NOTIFICATION_ACTION_EVENT = 'notification-action';
+const NOTIFICATION_ACTION_SUCCESS_EVENT = 'notification-action-success';
 const ANIME_FRANCHISE_RELATION_TYPES = new Set([
   'SEQUEL',
   'PREQUEL',
@@ -98,6 +100,7 @@ const expandedCards = { movies: new Set() };
 const sortModes = { movies: 'title', tvShows: 'title', anime: 'title', books: 'title' };
 const listCaches = {};
 const metadataRefreshInflight = new Set();
+const notificationActionsInflight = new Set();
 const AUTOCOMPLETE_LISTS = new Set(['movies', 'tvShows', 'anime', 'books']);
 const PRIMARY_LIST_TYPES = ['movies', 'tvShows', 'anime', 'books'];
 const suggestionForms = new Set();
@@ -170,6 +173,8 @@ const { setupWheelModal, openWheelModal, closeWheelModal } = createWheelModalMan
 });
 
 closeWheelModalRef = closeWheelModal;
+
+document.addEventListener(NOTIFICATION_ACTION_EVENT, handleNotificationActionEvent);
 
 const { renderList, renderUnifiedLibrary } = createListRenderer({
   listCaches,
@@ -849,7 +854,46 @@ function promptAnimeFranchiseSelection(plan, { rootAniListId, title } = {}) {
   });
 }
 
-function showAnimeFranchiseNotification(seriesName, missingEntries) {
+function sanitizeFranchiseEntryForNotification(entry, fallbackSeriesName, totalEntries) {
+  if (!entry || !entry.title) return null;
+  return {
+    aniListId: entry.aniListId || null,
+    title: entry.title,
+    year: Number.isFinite(entry.year) ? entry.year : null,
+    format: entry.format || '',
+    episodes: entry.episodes ?? null,
+    duration: entry.duration ?? null,
+    status: entry.status || '',
+    siteUrl: entry.siteUrl || '',
+    cover: entry.cover || '',
+    relationType: entry.relationType || '',
+    depth: Number.isFinite(entry.depth) ? entry.depth : 0,
+    seriesName: entry.seriesName || fallbackSeriesName || '',
+    seriesOrder: entry.seriesOrder ?? null,
+    seriesSize: Number.isFinite(entry.seriesSize) ? entry.seriesSize : (Number.isFinite(totalEntries) ? totalEntries : null),
+  };
+}
+
+function buildAnimeNotificationActionPayload(seriesName, missingEntries, context = {}) {
+  if (!Array.isArray(missingEntries) || missingEntries.length === 0) return null;
+  const derivedSeriesName = seriesName || context?.plan?.seriesName || '';
+  const planEntries = Array.isArray(context?.plan?.entries) ? context.plan.entries : null;
+  const totalEntries = Number.isFinite(context?.plan?.totalEntries)
+    ? context.plan.totalEntries
+    : (planEntries ? planEntries.length : missingEntries.length);
+  const entries = missingEntries
+    .map(entry => sanitizeFranchiseEntryForNotification(entry, derivedSeriesName, totalEntries))
+    .filter(Boolean);
+  if (!entries.length) return null;
+  return {
+    rootAniListId: context.rootAniListId || null,
+    totalEntries,
+    seriesName: derivedSeriesName,
+    entries,
+  };
+}
+
+function showAnimeFranchiseNotification(seriesName, missingEntries, context = {}) {
   if (!Array.isArray(missingEntries) || missingEntries.length === 0) return;
   const sampleTitles = missingEntries
     .map(entry => entry && entry.title)
@@ -865,10 +909,95 @@ function showAnimeFranchiseNotification(seriesName, missingEntries) {
   }
   const summary = segments.join(' | ');
   const body = summary
-    ? `${summary} ready to add from MyAnimeList. Use the anime Add form to pull them in.`
-    : 'New related entries are available on MyAnimeList. Use the anime Add form to pull them in.';
+    ? `${summary} ready to add from MyAnimeList. Use the button below to drop them straight into your anime list.`
+    : 'New related entries are available on MyAnimeList. Use the button below to add them directly.';
   const heading = seriesName ? `New entries for ${seriesName}` : 'New anime entries found';
-  pushNotification({ title: heading, message: body });
+  const actionPayload = buildAnimeNotificationActionPayload(seriesName, missingEntries, context);
+  pushNotification({
+    title: heading,
+    message: body,
+    actionLabel: actionPayload ? 'Add to anime list' : '',
+    actionType: actionPayload ? 'anime-franchise-add' : '',
+    actionPayload,
+  });
+}
+
+function handleNotificationActionEvent(event) {
+  const detail = event && event.detail ? event.detail : null;
+  if (!detail || !detail.actionType) return;
+  if (!currentUser) {
+    showAlert('Sign in to manage notifications first.');
+    return;
+  }
+  if (detail.actionType === 'anime-franchise-add') {
+    handleAnimeNotificationAction(detail);
+  }
+}
+
+async function handleAnimeNotificationAction(detail) {
+  const payload = detail && detail.payload ? detail.payload : null;
+  if (!payload || !Array.isArray(payload.entries) || !payload.entries.length) {
+    showAlert('Nothing left to add from that notification.');
+    return;
+  }
+  const notificationId = detail.id || null;
+  if (notificationId && notificationActionsInflight.has(notificationId)) {
+    return;
+  }
+  if (notificationId) {
+    notificationActionsInflight.add(notificationId);
+  }
+  const sanitizedEntries = payload.entries
+    .map(entry => sanitizeFranchiseEntryForNotification(entry, payload.seriesName, payload.totalEntries))
+    .filter(Boolean);
+  if (!sanitizedEntries.length) {
+    showAlert('Those entries can no longer be imported.');
+    if (notificationId) notificationActionsInflight.delete(notificationId);
+    return;
+  }
+  const selectionIds = sanitizedEntries
+    .map(entry => entry && entry.aniListId)
+    .filter(Boolean)
+    .map(id => String(id));
+  if (!selectionIds.length) {
+    showAlert('Missing AniList IDs for those entries, so they cannot be auto-added yet.');
+    if (notificationId) notificationActionsInflight.delete(notificationId);
+    return;
+  }
+  const plan = {
+    seriesName: payload.seriesName || '',
+    entries: sanitizedEntries,
+    totalEntries: payload.totalEntries ?? (sanitizedEntries[0] && sanitizedEntries[0].seriesSize) ?? sanitizedEntries.length,
+  };
+  try {
+    const addedCount = await autoAddAnimeFranchiseEntries(plan, payload.rootAniListId, selectionIds);
+    if (notificationId) {
+      document.dispatchEvent(new CustomEvent(NOTIFICATION_ACTION_SUCCESS_EVENT, { detail: { id: notificationId } }));
+    }
+    const title = plan.seriesName || 'Anime list updated';
+    if (typeof addedCount === 'number' && addedCount > 0) {
+      pushNotification({
+        title,
+        message: `Added ${addedCount} ${addedCount === 1 ? 'entry' : 'entries'} from that notification.`,
+        duration: 6500,
+        persist: false,
+      });
+    } else {
+      pushNotification({
+        title,
+        message: 'Those entries were already on your list.',
+        duration: 5500,
+        persist: false,
+      });
+    }
+  } catch (err) {
+    console.error('Unable to auto-add franchise entries from notification', err);
+    showAlert('Unable to add those entries right now. Please try again.');
+  } finally {
+    if (notificationId) {
+      notificationActionsInflight.delete(notificationId);
+    }
+  }
 }
 
 function loadAnimeFranchiseIgnoredIds() {
@@ -4833,8 +4962,10 @@ async function fetchAniListFranchisePlan({ aniListId, preferredSeriesName } = {}
   if (filtered.length <= 1) return null;
 
   filtered.sort(compareAnimeFranchiseEntries);
+  const totalEntries = filtered.length;
   filtered.forEach((entry, idx) => {
     entry.seriesOrder = idx + 1;
+    entry.seriesSize = totalEntries;
   });
   const seriesName = deriveAnimeSeriesName(filtered, preferredSeriesName);
   filtered.forEach(entry => {
@@ -4843,15 +4974,17 @@ async function fetchAniListFranchisePlan({ aniListId, preferredSeriesName } = {}
   return {
     seriesName,
     entries: filtered,
+    totalEntries,
   };
 }
 
 async function autoAddAnimeFranchiseEntries(plan, rootAniListId, selectedIds) {
-  if (!plan || !Array.isArray(plan.entries) || !plan.entries.length) return;
+  if (!plan || !Array.isArray(plan.entries) || !plan.entries.length) return 0;
   const rootId = rootAniListId ? Number(rootAniListId) : null;
   const selectionSet = Array.isArray(selectedIds) && selectedIds.length
     ? new Set(selectedIds.map(id => String(id)))
     : null;
+  const totalSeriesEntries = Number.isFinite(plan.totalEntries) ? plan.totalEntries : plan.entries.length;
   let addedCount = 0;
   for (const entry of plan.entries) {
     if (!entry || !entry.title) continue;
@@ -4863,7 +4996,7 @@ async function autoAddAnimeFranchiseEntries(plan, rootAniListId, selectedIds) {
       year: entry.year ? String(entry.year) : '',
       seriesName: entry.seriesName || plan.seriesName || '',
       seriesOrder: entry.seriesOrder ?? null,
-      seriesSize: plan.entries.length,
+      seriesSize: Number.isFinite(entry.seriesSize) ? entry.seriesSize : totalSeriesEntries,
       aniListId: entry.aniListId || null,
       aniListUrl: entry.siteUrl || '',
       animeFormat: entry.format || '',
@@ -4887,6 +5020,7 @@ async function autoAddAnimeFranchiseEntries(plan, rootAniListId, selectedIds) {
       console.info(`[MyAnimeList] Auto-added ${addedCount} related anime entries for "${plan.seriesName}"`);
     } catch (_) {}
   }
+  return addedCount;
 }
 
 function getAniListIdFromItem(item) {
@@ -4990,7 +5124,10 @@ async function runAnimeFranchiseScan(data) {
       const previousHash = animeFranchiseMissingHashes.get(seriesKey);
       if (previousHash === missingHash) continue;
       animeFranchiseMissingHashes.set(seriesKey, missingHash);
-      showAnimeFranchiseNotification(plan.seriesName || info.seriesName, missingEntries);
+      showAnimeFranchiseNotification(plan.seriesName || info.seriesName, missingEntries, {
+        plan,
+        rootAniListId: aniListId,
+      });
     }
   } finally {
     animeFranchiseScanInflight = false;

@@ -19,6 +19,8 @@ let notificationDropdownOpen = false;
 const notificationRecords = new Map();
 const notificationRecordKeyIndex = new Map();
 const NOTIFICATION_STORAGE_KEY = 'appNotificationRecords';
+const NOTIFICATION_ACTION_EVENT = 'notification-action';
+const NOTIFICATION_ACTION_SUCCESS_EVENT = 'notification-action-success';
 let notificationRecordsHydrated = false;
 let storageAvailableFlag = null;
 
@@ -53,11 +55,15 @@ function persistNotificationState() {
     return;
   }
   try {
-    const payload = Array.from(notificationRecords.values()).map(({ id, title, message, createdAt }) => ({
-      id,
-      title,
-      message,
-      createdAt,
+    const payload = Array.from(notificationRecords.values()).map((record) => ({
+      id: record.id,
+      title: record.title,
+      message: record.message,
+      createdAt: record.createdAt,
+      dedupeKey: record.key || null,
+      actionLabel: record.actionLabel || '',
+      actionType: record.actionType || '',
+      actionPayload: record.actionPayload ?? null,
     }));
     globalThis.localStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(payload));
   } catch (error) {
@@ -95,8 +101,10 @@ function hydrateNotificationRecords() {
     }
     const sanitizedTitle = typeof item.title === 'string' ? item.title : '';
     const sanitizedMessage = typeof item.message === 'string' ? item.message : '';
-    const key = buildNotificationKey(sanitizedTitle, sanitizedMessage);
-    if (notificationRecordKeyIndex.has(key)) {
+    const storedKey = typeof item.dedupeKey === 'string' && item.dedupeKey
+      ? item.dedupeKey
+      : buildNotificationKey(sanitizedTitle, sanitizedMessage);
+    if (notificationRecordKeyIndex.has(storedKey)) {
       return;
     }
     const record = {
@@ -104,14 +112,17 @@ function hydrateNotificationRecords() {
       title: sanitizedTitle,
       message: sanitizedMessage,
       createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
-      key,
+      key: storedKey,
+      actionLabel: typeof item.actionLabel === 'string' ? item.actionLabel : '',
+      actionType: typeof item.actionType === 'string' ? item.actionType : '',
+      actionPayload: item.actionPayload ?? null,
       listItem: null,
       toastEl: null,
       timerId: null,
       dismissToast: null,
     };
     notificationRecords.set(record.id, record);
-    notificationRecordKeyIndex.set(key, record.id);
+    notificationRecordKeyIndex.set(storedKey, record.id);
   });
 }
 
@@ -130,6 +141,17 @@ function createNotificationListItem(record) {
     msgEl.className = 'notification-item-message';
     msgEl.textContent = record.message;
     body.appendChild(msgEl);
+  }
+  if (record.actionLabel && record.actionType) {
+    const actions = document.createElement('div');
+    actions.className = 'notification-item-actions';
+    const actionBtn = document.createElement('button');
+    actionBtn.type = 'button';
+    actionBtn.className = 'notification-action-btn';
+    actionBtn.setAttribute('data-notification-action', record.id);
+    actionBtn.textContent = record.actionLabel;
+    actions.appendChild(actionBtn);
+    body.appendChild(actions);
   }
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
@@ -260,12 +282,43 @@ function handleNotificationCreate(event) {
 }
 
 function handleNotificationListClick(event) {
+  const actionBtn = event.target && event.target.closest('[data-notification-action]');
+  if (actionBtn) {
+    const actionId = actionBtn.getAttribute('data-notification-action');
+    if (actionId) {
+      const record = notificationRecords.get(actionId);
+      if (record) {
+        triggerNotificationAction(record);
+      }
+    }
+    return;
+  }
   const deleteBtn = event.target && event.target.closest('[data-notification-delete]');
   if (!deleteBtn) return;
   const id = deleteBtn.getAttribute('data-notification-delete');
   if (id) {
     dismissNotificationById(id);
   }
+}
+
+function triggerNotificationAction(record) {
+  if (!record || !record.actionType || typeof document === 'undefined') {
+    return;
+  }
+  const detail = {
+    id: record.id,
+    actionType: record.actionType,
+    payload: record.actionPayload ?? null,
+  };
+  document.dispatchEvent(new CustomEvent(NOTIFICATION_ACTION_EVENT, { detail }));
+}
+
+function handleNotificationActionSuccess(event) {
+  const detail = event && event.detail ? event.detail : null;
+  if (!detail || !detail.id) {
+    return;
+  }
+  dismissNotificationById(detail.id);
 }
 
 function dismissNotificationById(id) {
@@ -468,15 +521,34 @@ export function showAlert(message, options = {}) {
   });
 }
 
-export function pushNotification({ title, message, duration = 9000 } = {}) {
+export function pushNotification({
+  title,
+  message,
+  duration = 9000,
+  actionLabel = '',
+  actionType = '',
+  actionPayload = null,
+  persist = true,
+  dedupeKey = null,
+} = {}) {
   const recordTitle = title === null || title === undefined ? '' : String(title);
   const recordMessage = message === null || message === undefined ? '' : String(message);
   const hasContent = Boolean(recordTitle) || Boolean(recordMessage);
   if (!hasContent) return;
   hydrateNotificationRecords();
-  const dedupeKey = buildNotificationKey(recordTitle, recordMessage);
-  if (notificationRecordKeyIndex.has(dedupeKey)) {
-    return;
+  const shouldPersist = persist !== false;
+  const normalizedActionLabel = actionLabel ? String(actionLabel) : '';
+  const normalizedActionType = actionType ? String(actionType) : '';
+  const hasAction = Boolean(normalizedActionLabel && normalizedActionType);
+  const storedPayload = hasAction ? actionPayload ?? null : null;
+  let dedupeKeyValue = null;
+  if (shouldPersist) {
+    dedupeKeyValue = typeof dedupeKey === 'string' && dedupeKey
+      ? dedupeKey
+      : buildNotificationKey(recordTitle, recordMessage);
+    if (notificationRecordKeyIndex.has(dedupeKeyValue)) {
+      return;
+    }
   }
   const center = getNotificationCenter();
   if (!center) {
@@ -493,16 +565,23 @@ export function pushNotification({ title, message, duration = 9000 } = {}) {
     title: recordTitle,
     message: recordMessage,
     createdAt: Date.now(),
-    key: dedupeKey,
+    key: dedupeKeyValue,
+    actionLabel: hasAction ? normalizedActionLabel : '',
+    actionType: hasAction ? normalizedActionType : '',
+    actionPayload: storedPayload,
     listItem: null,
     toastEl: null,
     timerId: null,
     dismissToast: null,
   };
-  notificationRecords.set(id, record);
-  notificationRecordKeyIndex.set(dedupeKey, id);
-  upsertNotificationListItem(record);
-  persistNotificationState();
+  if (shouldPersist) {
+    notificationRecords.set(id, record);
+    if (dedupeKeyValue) {
+      notificationRecordKeyIndex.set(dedupeKeyValue, id);
+    }
+    upsertNotificationListItem(record);
+    persistNotificationState();
+  }
 
   const card = document.createElement('div');
   card.className = 'notification-card';
@@ -520,6 +599,17 @@ export function pushNotification({ title, message, duration = 9000 } = {}) {
   }
   const footer = document.createElement('div');
   footer.className = 'notification-footer';
+  if (record.actionLabel && record.actionType) {
+    const actionBtn = document.createElement('button');
+    actionBtn.type = 'button';
+    actionBtn.className = 'notification-primary-action';
+    actionBtn.textContent = record.actionLabel;
+    actionBtn.addEventListener('click', () => {
+      triggerNotificationAction(record);
+      dismissToastOnly();
+    });
+    footer.appendChild(actionBtn);
+  }
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'notification-close';
@@ -581,6 +671,10 @@ export function pushNotification({ title, message, duration = 9000 } = {}) {
   });
 
   closeBtn.addEventListener('click', dismissToastOnly);
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener(NOTIFICATION_ACTION_SUCCESS_EVENT, handleNotificationActionSuccess);
 }
 
 requestNotificationMenuInit();
