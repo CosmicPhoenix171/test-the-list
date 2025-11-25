@@ -24,6 +24,31 @@
         <div class="user-info">
           <span id="user-name"></span>
           <button id="back-to-top" class="btn ghost hidden" type="button">Back to top</button>
+          <div class="notification-menu" data-role="notification-menu">
+            <button id="notification-bell" class="icon-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="notification-dropdown">
+              <span class="sr-only">Open notifications</span>
+              <svg class="bell-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M12 3a6 6 0 0 0-6 6v3.382l-.764 1.914A1 1 0 0 0 6.17 16h11.66a1 1 0 0 0 .934-1.704L18 12.382V9a6 6 0 0 0-6-6Zm0 18a2.5 2.5 0 0 1-2.45-2h4.9A2.5 2.5 0 0 1 12 21Z" fill="currentColor"/>
+              </svg>
+              <span class="notification-dot" aria-hidden="true" hidden></span>
+            </button>
+            <div id="notification-dropdown" class="notification-dropdown" role="dialog" aria-label="Notifications">
+              <div class="notification-dropdown-header">
+                <h4>Notifications</h4>
+                <button type="button" class="text-button" data-notification-clear>Clear all</button>
+              </div>
+              <form id="notification-create-form" class="notification-create-form">
+                <label class="sr-only" for="notification-title-input">Notification title</label>
+                <input id="notification-title-input" name="title" placeholder="Title (optional)" autocomplete="off" />
+                <label class="sr-only" for="notification-message-input">Notification message</label>
+                <textarea id="notification-message-input" name="message" rows="2" placeholder="Message"></textarea>
+                <button type="submit" class="btn primary small">Add notification</button>
+              </form>
+              <div id="notification-dropdown-list" class="notification-dropdown-list" role="listbox">
+                <p class="empty-state" data-empty-state>No notifications yet.</p>
+              </div>
+            </div>
+          </div>
           <button id="sign-out" class="btn secondary">Sign out</button>
         </div>
       </header>

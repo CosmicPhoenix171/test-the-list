@@ -6,6 +6,17 @@ let overlayEl = null;
 let overlayKeyHandler = null;
 let overlayVisible = false;
 let notificationCenterEl = null;
+let notificationBellButton = null;
+let notificationDropdownEl = null;
+let notificationMenuContainer = null;
+let notificationListEl = null;
+let notificationDotEl = null;
+let notificationFormEl = null;
+let notificationClearBtn = null;
+let notificationEmptyStateEl = null;
+let notificationMenuInitialized = false;
+let notificationDropdownOpen = false;
+const notificationRecords = new Map();
 
 function getNotificationCenter() {
   if (typeof document === 'undefined') {
@@ -16,6 +27,175 @@ function getNotificationCenter() {
   }
   notificationCenterEl = document.getElementById('notification-center');
   return notificationCenterEl;
+}
+
+function requestNotificationMenuInit() {
+  if (notificationMenuInitialized || typeof document === 'undefined') {
+    return;
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initNotificationMenu, { once: true });
+    return;
+  }
+  initNotificationMenu();
+}
+
+function initNotificationMenu() {
+  if (notificationMenuInitialized || typeof document === 'undefined') return;
+  notificationBellButton = document.getElementById('notification-bell');
+  notificationDropdownEl = document.getElementById('notification-dropdown');
+  notificationListEl = document.getElementById('notification-dropdown-list');
+  notificationFormEl = document.getElementById('notification-create-form');
+  notificationClearBtn = notificationDropdownEl ? notificationDropdownEl.querySelector('[data-notification-clear]') : null;
+  notificationMenuContainer = notificationBellButton ? notificationBellButton.closest('.notification-menu') : null;
+  notificationDotEl = notificationBellButton ? notificationBellButton.querySelector('.notification-dot') : null;
+  notificationEmptyStateEl = notificationListEl ? notificationListEl.querySelector('[data-empty-state]') : null;
+
+  if (!notificationBellButton || !notificationDropdownEl || !notificationListEl || !notificationMenuContainer) {
+    return;
+  }
+
+  notificationMenuInitialized = true;
+  notificationBellButton.addEventListener('click', () => toggleNotificationDropdown());
+  document.addEventListener('click', handleGlobalNotificationClick);
+  document.addEventListener('keydown', handleNotificationMenuKeydown);
+  if (notificationFormEl) {
+    notificationFormEl.addEventListener('submit', handleNotificationCreate);
+  }
+  if (notificationListEl) {
+    notificationListEl.addEventListener('click', handleNotificationListClick);
+  }
+  if (notificationClearBtn) {
+    notificationClearBtn.addEventListener('click', clearAllNotifications);
+  }
+  updateNotificationIndicators();
+}
+
+function toggleNotificationDropdown(forceState) {
+  if (!notificationMenuInitialized) return;
+  const next = typeof forceState === 'boolean' ? forceState : !notificationDropdownOpen;
+  notificationDropdownOpen = next;
+  notificationMenuContainer.classList.toggle('open', next);
+  notificationBellButton.setAttribute('aria-expanded', String(next));
+}
+
+function handleGlobalNotificationClick(event) {
+  if (!notificationDropdownOpen || !notificationMenuContainer) return;
+  if (notificationMenuContainer.contains(event.target)) return;
+  toggleNotificationDropdown(false);
+}
+
+function handleNotificationMenuKeydown(event) {
+  if (!notificationDropdownOpen) return;
+  if (event.key === 'Escape') {
+    toggleNotificationDropdown(false);
+    if (notificationBellButton) {
+      notificationBellButton.focus();
+    }
+  }
+}
+
+function handleNotificationCreate(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (!form) return;
+  const titleInput = form.querySelector('input[name="title"]');
+  const messageInput = form.querySelector('textarea[name="message"]');
+  const title = titleInput ? titleInput.value.trim() : '';
+  const message = messageInput ? messageInput.value.trim() : '';
+  if (!title && !message) {
+    showAlert('Enter a title or message before adding a notification.');
+    return;
+  }
+  pushNotification({ title, message });
+  form.reset();
+}
+
+function handleNotificationListClick(event) {
+  const deleteBtn = event.target && event.target.closest('[data-notification-delete]');
+  if (!deleteBtn) return;
+  const id = deleteBtn.getAttribute('data-notification-delete');
+  if (id) {
+    dismissNotificationById(id);
+  }
+}
+
+function dismissNotificationById(id) {
+  const record = notificationRecords.get(id);
+  if (!record) return;
+  if (typeof record.dismiss === 'function') {
+    record.dismiss();
+  } else {
+    finalizeNotificationRemoval(id);
+  }
+}
+
+function clearAllNotifications() {
+  if (!notificationRecords.size) return;
+  const records = Array.from(notificationRecords.values());
+  records.forEach(record => {
+    if (typeof record.dismiss === 'function') {
+      record.dismiss();
+    } else {
+      finalizeNotificationRemoval(record.id);
+    }
+  });
+}
+
+function upsertNotificationListItem(record) {
+  if (!notificationListEl) return;
+  const item = document.createElement('div');
+  item.className = 'notification-dropdown-item';
+  item.dataset.notificationId = record.id;
+  const body = document.createElement('div');
+  body.className = 'notification-item-body';
+  const titleEl = document.createElement('p');
+  titleEl.className = 'notification-item-title';
+  titleEl.textContent = record.title || 'Notification';
+  body.appendChild(titleEl);
+  if (record.message) {
+    const msgEl = document.createElement('p');
+    msgEl.className = 'notification-item-message';
+    msgEl.textContent = record.message;
+    body.appendChild(msgEl);
+  }
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'notification-delete-btn';
+  deleteBtn.setAttribute('data-notification-delete', record.id);
+  deleteBtn.textContent = 'Delete';
+  item.appendChild(body);
+  item.appendChild(deleteBtn);
+  if (notificationListEl.firstChild) {
+    notificationListEl.insertBefore(item, notificationListEl.firstChild);
+  } else {
+    notificationListEl.appendChild(item);
+  }
+  record.listItem = item;
+  updateNotificationIndicators();
+}
+
+function finalizeNotificationRemoval(id) {
+  const record = notificationRecords.get(id);
+  if (!record) return;
+  notificationRecords.delete(id);
+  if (record.listItem && record.listItem.parentNode) {
+    record.listItem.parentNode.removeChild(record.listItem);
+  }
+  updateNotificationIndicators();
+}
+
+function updateNotificationIndicators() {
+  const hasItems = notificationRecords.size > 0;
+  if (notificationDotEl) {
+    notificationDotEl.hidden = !hasItems;
+  }
+  if (notificationClearBtn) {
+    notificationClearBtn.disabled = !hasItems;
+  }
+  if (notificationEmptyStateEl) {
+    notificationEmptyStateEl.hidden = hasItems;
+  }
 }
 
 function normalizeMessage(input) {
@@ -170,6 +350,18 @@ export function pushNotification({ title, message, duration = 9000 } = {}) {
     }
     return;
   }
+  requestNotificationMenuInit();
+  const id = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const record = {
+    id,
+    title: title || '',
+    message: message || '',
+    listItem: null,
+    dismiss: null,
+  };
+  notificationRecords.set(id, record);
+  upsertNotificationListItem(record);
+
   const card = document.createElement('div');
   card.className = 'notification-card';
   if (title) {
@@ -206,6 +398,11 @@ export function pushNotification({ title, message, duration = 9000 } = {}) {
   const dismiss = () => {
     if (dismissed) return;
     dismissed = true;
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+    finalizeNotificationRemoval(id);
     card.classList.remove('visible');
     setTimeout(() => {
       if (card.parentNode) {
@@ -213,6 +410,8 @@ export function pushNotification({ title, message, duration = 9000 } = {}) {
       }
     }, 240);
   };
+
+  record.dismiss = dismiss;
 
   timerId = setTimeout(dismiss, Math.max(4000, duration));
 
@@ -229,5 +428,7 @@ export function pushNotification({ title, message, duration = 9000 } = {}) {
 
   closeBtn.addEventListener('click', dismiss);
 }
+
+requestNotificationMenuInit();
 
 export default showAlert;
