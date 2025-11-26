@@ -3378,7 +3378,10 @@ function refreshAniListMetadataForItem(itemId, item) {
     title: item.title || '',
     year: item.year || '',
   };
-  fetchAniListMetadata(lookup, { requestSource: 'Auto metadata refresh' }).then(metadata => {
+  fetchAniListMetadata(lookup, {
+    requestSource: 'Auto metadata refresh',
+    notifyOnError: true,
+  }).then(metadata => {
     if (!metadata) return;
     const updates = deriveMetadataAssignments(metadata, item, {
       overwrite: false,
