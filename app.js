@@ -59,11 +59,12 @@ const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const TMDB_KEYWORD_DISCOVER_PAGE_LIMIT = 5;
 const JIKAN_MAX_RETRIES = 3;
 const JIKAN_RATE_LIMIT_BACKOFF_MS = 1500;
-const JIKAN_MAX_REQUESTS_PER_SECOND = 3;
-const JIKAN_MAX_REQUESTS_PER_MINUTE = 60;
+const JIKAN_MAX_REQUESTS_PER_SECOND = 2;
+const JIKAN_MAX_REQUESTS_PER_MINUTE = 40;
 const JIKAN_SECOND_WINDOW_MS = 1000;
 const JIKAN_MINUTE_WINDOW_MS = 1000 * 60;
 const JIKAN_RATE_LIMIT_MIN_INTERVAL_MS = Math.ceil(JIKAN_SECOND_WINDOW_MS / JIKAN_MAX_REQUESTS_PER_SECOND);
+const JIKAN_DEFAULT_RETRY_AFTER_MS = 4000;
 const ANIME_STATUS_PRIORITY = {
   RELEASING: 4,
   AIRING: 4,
@@ -136,6 +137,7 @@ let lastJikanRequestTimestamp = 0;
 let lastJikanRateLimitNotice = 0;
 let lastJikanNetworkIssueNotice = 0;
 let jikanRateLimiterTail = Promise.resolve();
+let jikanForcedCooldownUntil = 0;
 
 let currentUser = null;
 let appInitialized = false;
@@ -4546,6 +4548,30 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function scheduleJikanForcedCooldown(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+  const target = Date.now() + durationMs;
+  if (target > jikanForcedCooldownUntil) {
+    jikanForcedCooldownUntil = target;
+  }
+}
+
+function parseRetryAfterMs(value) {
+  if (!value) return 0;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric * 1000;
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isNaN(timestamp)) {
+    const diff = timestamp - Date.now();
+    if (diff > 0) {
+      return diff;
+    }
+  }
+  return 0;
+}
+
 function pruneJikanRateWindows(now) {
   while (jikanSecondWindow.length && (now - jikanSecondWindow[0]) >= JIKAN_SECOND_WINDOW_MS) {
     jikanSecondWindow.shift();
@@ -4571,6 +4597,10 @@ function millisecondsUntilNextJikanSlot(now) {
 async function acquireJikanRateLimitSlot() {
   while (true) {
     const now = Date.now();
+    if (jikanForcedCooldownUntil > now) {
+      await delay(jikanForcedCooldownUntil - now);
+      continue;
+    }
     pruneJikanRateWindows(now);
     const underSecond = jikanSecondWindow.length < JIKAN_MAX_REQUESTS_PER_SECOND;
     const underMinute = jikanMinuteWindow.length < JIKAN_MAX_REQUESTS_PER_MINUTE;
@@ -4619,11 +4649,19 @@ async function fetchJikanJson(path, params = {}) {
     if (result && result.ok) {
       return result;
     }
-    if (result && result.status === 429 && attempt < JIKAN_MAX_RETRIES) {
+    if (result && result.status === 429) {
       notifyJikanRateLimit();
-      await delay(JIKAN_RATE_LIMIT_BACKOFF_MS * (attempt + 1));
-      attempt++;
-      continue;
+      const retryAfterMs = Math.max(
+        result.retryAfterMs || 0,
+        JIKAN_DEFAULT_RETRY_AFTER_MS,
+        JIKAN_RATE_LIMIT_BACKOFF_MS * (attempt + 1)
+      );
+      scheduleJikanForcedCooldown(retryAfterMs);
+      if (attempt < JIKAN_MAX_RETRIES) {
+        await delay(retryAfterMs);
+        attempt++;
+        continue;
+      }
     }
     if ((!result || result.status === 0) && attempt < JIKAN_MAX_RETRIES) {
       notifyJikanNetworkIssue(result?.message);
@@ -4648,6 +4686,7 @@ async function performJikanFetch(path, params = {}) {
     });
     const contentType = resp.headers.get('content-type') || '';
     const isJson = contentType.includes('application/json');
+    const retryAfterMs = parseRetryAfterMs(resp.headers.get('retry-after'));
     let payload = null;
     try {
       payload = isJson ? await resp.json() : await resp.text();
@@ -4665,12 +4704,14 @@ async function performJikanFetch(path, params = {}) {
         status: resp.status,
         data: payload,
         message: extractJikanErrorMessage(payload),
+        retryAfterMs,
       };
     }
     return {
       ok: true,
       status: resp.status,
       data: payload,
+      retryAfterMs,
     };
   } catch (err) {
     console.warn('Jikan request error', err);
