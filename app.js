@@ -152,7 +152,7 @@ const backToTopBtn = document.getElementById('back-to-top');
 const appRoot = document.getElementById('app');
 const loginScreen = document.getElementById('login-screen');
 const unifiedSearchInput = document.getElementById('library-search');
-const typeFilterButtons = document.querySelectorAll('[data-type-toggle]');
+let typeFilterButtons = [];
 const userNameEl = document.getElementById('user-name');
 
 const tmEasterEgg = {
@@ -1005,6 +1005,7 @@ function loadPrimaryLists() {
 }
 
 function initUnifiedLibraryControls() {
+  typeFilterButtons = Array.from(document.querySelectorAll('[data-type-toggle]'));
   if (unifiedSearchInput) {
     unifiedSearchInput.addEventListener('input', debounce((ev) => {
       unifiedFilters.search = (ev.target.value || '').trim().toLowerCase();
@@ -1041,6 +1042,7 @@ function toggleUnifiedTypeFilter(listType, event = null) {
 }
 
 function updateUnifiedTypeControls() {
+  if (!typeFilterButtons || !typeFilterButtons.length) return;
   typeFilterButtons.forEach(btn => {
     const type = btn.dataset.typeToggle;
     const isActive = !!(type && unifiedFilters.types.has(type));
@@ -4419,8 +4421,16 @@ if (auth) {
 }
 
 // tmEasterEgg.bindTriggers();
-initUnifiedLibraryControls();
-renderUnifiedLibrary();
+function bootstrapUnifiedLibraryUi() {
+  initUnifiedLibraryControls();
+  renderUnifiedLibrary();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrapUnifiedLibraryUi, { once: true });
+} else {
+  bootstrapUnifiedLibraryUi();
+}
 
 function updateListStats(listType, entries) {
   const statsEl = document.getElementById(`${listType}-stats`);
