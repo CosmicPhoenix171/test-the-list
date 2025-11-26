@@ -3725,18 +3725,10 @@ function buildWatchNowSection(listType, item, inline = false) {
   const block = inline ? createEl('span', 'watch-now-inline') : createEl('div', 'watch-now-block');
 
   // Control (inline next to links)
-  const btnClass = inline ? 'meta-link' : 'btn secondary';
+  const btnClass = 'meta-link watch-now-trigger';
   const btn = createEl('button', btnClass, { text: 'Watch Now' });
-  if (!inline) {
-    const controlRow = createEl('div', 'watch-now-controls');
-    controlRow.style.display = 'flex';
-    controlRow.style.gap = '.5rem';
-    controlRow.style.alignItems = 'center';
-    controlRow.appendChild(btn);
-    block.appendChild(controlRow);
-  } else {
-    block.appendChild(btn);
-  }
+  btn.type = 'button';
+  block.appendChild(btn);
 
   const dropdown = createEl('div', 'watch-dropdown');
   dropdown.style.display = 'none';
