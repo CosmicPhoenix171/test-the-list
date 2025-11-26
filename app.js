@@ -153,6 +153,7 @@ const appRoot = document.getElementById('app');
 const loginScreen = document.getElementById('login-screen');
 const unifiedSearchInput = document.getElementById('library-search');
 let typeFilterButtons = [];
+let typeFilterDelegationBound = false;
 const userNameEl = document.getElementById('user-name');
 
 const tmEasterEgg = {
@@ -1005,18 +1006,37 @@ function loadPrimaryLists() {
 }
 
 function initUnifiedLibraryControls() {
-  typeFilterButtons = Array.from(document.querySelectorAll('[data-type-toggle]'));
+  refreshTypeFilterButtons();
   if (unifiedSearchInput) {
     unifiedSearchInput.addEventListener('input', debounce((ev) => {
       unifiedFilters.search = (ev.target.value || '').trim().toLowerCase();
       renderUnifiedLibrary();
     }, 180));
   }
-  typeFilterButtons.forEach(btn => {
-    const type = btn.dataset.typeToggle;
-    btn.addEventListener('click', (ev) => toggleUnifiedTypeFilter(type, ev));
-  });
+  bindTypeFilterDelegation();
   updateUnifiedTypeControls();
+}
+
+function refreshTypeFilterButtons() {
+  typeFilterButtons = Array.from(document.querySelectorAll('[data-type-toggle]'));
+  return typeFilterButtons;
+}
+
+function bindTypeFilterDelegation() {
+  if (typeFilterDelegationBound) return;
+  document.addEventListener('click', handleTypeFilterTrigger);
+  typeFilterDelegationBound = true;
+}
+
+function handleTypeFilterTrigger(event) {
+  const btn = event.target.closest('[data-type-toggle]');
+  if (!btn || btn.disabled) return;
+  const type = btn.dataset.typeToggle;
+  if (!type) return;
+  if (!typeFilterButtons.includes(btn)) {
+    refreshTypeFilterButtons();
+  }
+  toggleUnifiedTypeFilter(type, event);
 }
 
 function toggleUnifiedTypeFilter(listType, event = null) {
@@ -1042,7 +1062,10 @@ function toggleUnifiedTypeFilter(listType, event = null) {
 }
 
 function updateUnifiedTypeControls() {
-  if (!typeFilterButtons || !typeFilterButtons.length) return;
+  if (!typeFilterButtons || !typeFilterButtons.length) {
+    refreshTypeFilterButtons();
+  }
+  if (!typeFilterButtons.length) return;
   typeFilterButtons.forEach(btn => {
     const type = btn.dataset.typeToggle;
     const isActive = !!(type && unifiedFilters.types.has(type));
