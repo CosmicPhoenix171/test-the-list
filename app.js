@@ -1927,6 +1927,13 @@ function buildMovieCardDetails(listType, cardId, entryId, item) {
     }
   }
 
+  if (isCollapsibleList(listType)) {
+    const seriesBlock = buildSeriesCarouselBlock(listType, cardId);
+    if (seriesBlock) {
+      details.appendChild(seriesBlock);
+    }
+  }
+
   if (item.plot) {
     details.appendChild(createEl('div', 'plot-summary detail-block', { text: item.plot.trim() }));
   }
@@ -1946,13 +1953,6 @@ function buildMovieCardDetails(listType, cardId, entryId, item) {
     const animeBlock = buildAnimeDetailBlock(item);
     if (animeBlock) {
       details.appendChild(animeBlock);
-    }
-  }
-
-  if (isCollapsibleList(listType)) {
-    const seriesBlock = buildSeriesCarouselBlock(listType, cardId);
-    if (seriesBlock) {
-      details.appendChild(seriesBlock);
     }
   }
 
