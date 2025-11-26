@@ -50,6 +50,17 @@ const COLLAPSIBLE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const AUTOCOMPLETE_LISTS = new Set(['movies', 'tvShows', 'anime', 'books']);
 const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const TMDB_KEYWORD_DISCOVER_PAGE_LIMIT = 5;
+const ANIME_STATUS_PRIORITY = {
+  RELEASING: 4,
+  AIRING: 4,
+  CURRENTLY_AIRING: 4,
+  FINISHED: 3,
+  COMPLETED: 3,
+  NOT_YET_RELEASED: 2,
+  PLANNED: 2,
+  CANCELLED: 1,
+  HIATUS: 1,
+};
 const ANIME_FRANCHISE_IGNORE_KEY = 'animeFranchiseIgnoredIds';
 const INTRO_SESSION_KEY = 'introPlayed';
 
