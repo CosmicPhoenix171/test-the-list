@@ -5012,3 +5012,18 @@ async function autoAddTmdbKeywordEntries(franchiseLabel, keywordInfo, entries, o
   }
 }
 
+// Boot
+initFirebase();
+if (auth) {
+  handleAuthState();
+  handleSignInRedirectResult();
+} else {
+  try {
+    handleAuthState();
+    handleSignInRedirectResult();
+  } catch(e) { /* silent */ }
+}
+
+tmEasterEgg.bindTriggers();
+initUnifiedLibraryControls();
+
