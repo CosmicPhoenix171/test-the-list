@@ -50,6 +50,9 @@ const COLLAPSIBLE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const AUTOCOMPLETE_LISTS = new Set(['movies', 'tvShows', 'anime', 'books']);
 const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const TMDB_KEYWORD_DISCOVER_PAGE_LIMIT = 5;
+const JIKAN_MAX_RETRIES = 3;
+const JIKAN_RATE_LIMIT_BACKOFF_MS = 1500;
+const JIKAN_RATE_LIMIT_MIN_INTERVAL_MS = 520;
 const ANIME_STATUS_PRIORITY = {
   RELEASING: 4,
   AIRING: 4,
@@ -64,6 +67,32 @@ const ANIME_STATUS_PRIORITY = {
 const METADATA_SCHEMA_VERSION = 1;
 const ANIME_FRANCHISE_IGNORE_KEY = 'animeFranchiseIgnoredIds';
 const INTRO_SESSION_KEY = 'introPlayed';
+const ANIME_FRANCHISE_RELATION_TYPES = new Set([
+  'SEQUEL',
+  'PREQUEL',
+  'ALTERNATE',
+  'ALTERNATE_VERSION',
+  'SIDE_STORY',
+  'SUMMARY',
+  'OTHER',
+  'ADAPTATION',
+  'PARENT',
+  'CHILD',
+  'SPIN_OFF',
+]);
+const ANIME_FRANCHISE_ALLOWED_FORMATS = new Set([
+  'TV',
+  'TV_SHORT',
+  'ONA',
+  'OVA',
+  'MOVIE',
+  'SPECIAL',
+  'MUSIC',
+]);
+const ANIME_FRANCHISE_MAX_ENTRIES = 64;
+const ANIME_FRANCHISE_MAX_DEPTH = 3;
+const ANIME_FRANCHISE_RESCAN_INTERVAL_MS = 1000 * 60 * 60;
+const ANIME_FRANCHISE_SCAN_SERIES_LIMIT = 4;
 
 const listCaches = {};
 const actorFilters = {};
@@ -75,10 +104,21 @@ const seriesGroups = {};
 const expandedCards = {};
 const metadataRefreshInflight = new Set();
 const seriesCarouselState = {};
+const jikanNotFoundAnimeIds = new Set();
+const animeFranchiseMissingHashes = new Map();
 const unifiedFilters = {
   search: '',
   types: new Set(PRIMARY_LIST_TYPES)
 };
+
+let pendingAnimeScanData = null;
+let animeFranchiseScanTimer = null;
+let animeFranchiseScanInflight = false;
+let animeFranchiseLastScanTime = 0;
+let animeFranchiseLastScanSignature = '';
+let lastJikanRequestTimestamp = 0;
+let lastJikanRateLimitNotice = 0;
+let lastJikanNetworkIssueNotice = 0;
 
 let currentUser = null;
 let appInitialized = false;
@@ -4252,6 +4292,38 @@ function extractAnimeDurationMinutes(media) {
     return media.durationMinutes;
   }
   return '';
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withJikanRateLimit(fn) {
+  if (typeof fn !== 'function') return null;
+  const now = Date.now();
+  const elapsed = now - lastJikanRequestTimestamp;
+  if (elapsed < JIKAN_RATE_LIMIT_MIN_INTERVAL_MS) {
+    await delay(JIKAN_RATE_LIMIT_MIN_INTERVAL_MS - elapsed);
+  }
+  try {
+    return await fn();
+  } finally {
+    lastJikanRequestTimestamp = Date.now();
+  }
+}
+
+function notifyJikanRateLimit() {
+  const now = Date.now();
+  if (now - lastJikanRateLimitNotice < 30000) return;
+  lastJikanRateLimitNotice = now;
+  console.warn('Jikan rate limit encountered, backing off');
+}
+
+function notifyJikanNetworkIssue(message) {
+  const now = Date.now();
+  if (now - lastJikanNetworkIssueNotice < 30000) return;
+  lastJikanNetworkIssueNotice = now;
+  console.warn('Jikan network issue', message || '');
 }
 
 async function fetchJikanJson(path, params = {}) {
