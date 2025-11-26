@@ -1011,19 +1011,28 @@ function initUnifiedLibraryControls() {
   }
   typeFilterButtons.forEach(btn => {
     const type = btn.dataset.typeToggle;
-    btn.addEventListener('click', () => toggleUnifiedTypeFilter(type));
+    btn.addEventListener('click', (ev) => toggleUnifiedTypeFilter(type, ev));
   });
   updateUnifiedTypeControls();
 }
 
-function toggleUnifiedTypeFilter(listType) {
+function toggleUnifiedTypeFilter(listType, event = null) {
   if (!listType) return;
-  const filters = unifiedFilters.types;
-  if (filters.has(listType)) {
-    if (filters.size === 1) return; // always keep at least one type active
-    filters.delete(listType);
+  const wantsMultiSelect = !!(event && (event.metaKey || event.ctrlKey || event.shiftKey));
+  if (!wantsMultiSelect) {
+    const isAlreadySolo = unifiedFilters.types.size === 1 && unifiedFilters.types.has(listType);
+    unifiedFilters.types = isAlreadySolo
+      ? new Set(PRIMARY_LIST_TYPES)
+      : new Set([listType]);
   } else {
-    filters.add(listType);
+    const next = new Set(unifiedFilters.types);
+    if (next.has(listType)) {
+      if (next.size === 1) return;
+      next.delete(listType);
+    } else {
+      next.add(listType);
+    }
+    unifiedFilters.types = next;
   }
   updateUnifiedTypeControls();
   renderUnifiedLibrary();
