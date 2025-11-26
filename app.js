@@ -1546,6 +1546,11 @@ function buildMovieCardInfo(listType, item, context = {}) {
     if (badges) info.appendChild(badges);
   }
 
+  const watchTime = buildWatchTimeChip(listType, context.cardId, item);
+  if (watchTime) {
+    info.appendChild(watchTime);
+  }
+
   return info;
 }
 
@@ -2598,6 +2603,113 @@ function formatRuntimeDuration(totalMinutes) {
   return parts.join(' ');
 }
 
+function resolvePositiveNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+  if (typeof value === 'string') {
+    const match = value.match(/(\d+(?:\.\d+)?)/);
+    if (match) {
+      const parsed = Number(match[1]);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+function extractEpisodeCount(item) {
+  if (!item) return 0;
+  const candidates = [
+    item.episodeCount,
+    item.tvEpisodes,
+    item.animeEpisodes,
+    item.episodes,
+  ];
+  for (const candidate of candidates) {
+    const value = resolvePositiveNumber(candidate);
+    if (value) {
+      return Math.round(value);
+    }
+  }
+  return 0;
+}
+
+function extractEpisodeRuntimeMinutes(item, listType) {
+  if (!item) return 0;
+  const candidates = [
+    item.episodeRuntime,
+    item.tvEpisodeRuntime,
+    item.animeDuration,
+  ];
+  for (const candidate of candidates) {
+    const value = resolvePositiveNumber(candidate);
+    if (value) {
+      return Math.round(value);
+    }
+  }
+  if (listType && listType !== 'movies') {
+    const fallback = parseRuntimeMinutes(item.runtime);
+    if (fallback > 0) {
+      return fallback;
+    }
+  }
+  return 0;
+}
+
+function estimateItemWatchMinutes(listType, item) {
+  if (!item) return 0;
+  if (listType === 'movies') {
+    return parseRuntimeMinutes(item.runtime);
+  }
+  const totalEpisodes = extractEpisodeCount(item);
+  const perEpisodeMinutes = extractEpisodeRuntimeMinutes(item, listType);
+  if (totalEpisodes > 0 && perEpisodeMinutes > 0) {
+    return totalEpisodes * perEpisodeMinutes;
+  }
+  const fallback = parseRuntimeMinutes(item.runtime);
+  return fallback > 0 ? fallback : 0;
+}
+
+function collectWatchTimeEntries(listType, cardId, fallbackItem) {
+  if (cardId && isCollapsibleList(listType)) {
+    const entries = getSeriesGroupEntries(listType, cardId);
+    if (entries && entries.length) {
+      return entries.map(entry => entry && entry.item).filter(Boolean);
+    }
+  }
+  return fallbackItem ? [fallbackItem] : [];
+}
+
+function buildWatchTimeChip(listType, cardId, fallbackItem) {
+  const entries = collectWatchTimeEntries(listType, cardId, fallbackItem);
+  if (!entries.length) return null;
+  let totalMinutes = 0;
+  let totalEpisodes = 0;
+  entries.forEach(entry => {
+    totalMinutes += estimateItemWatchMinutes(listType, entry);
+    totalEpisodes += extractEpisodeCount(entry);
+  });
+  totalMinutes = Math.round(totalMinutes);
+  if (!totalMinutes) return null;
+  const chip = createEl('div', 'watch-time-chip');
+  chip.appendChild(createEl('span', 'watch-time-label', { text: 'Watch time' }));
+  chip.appendChild(createEl('span', 'watch-time-value', { text: formatRuntimeDuration(totalMinutes) }));
+  const metaParts = [];
+  if (listType !== 'movies' && totalEpisodes > 0) {
+    metaParts.push(`${totalEpisodes} episode${totalEpisodes === 1 ? '' : 's'}`);
+  }
+  if (entries.length > 1) {
+    metaParts.push(`${entries.length} entries`);
+  }
+  if (metaParts.length) {
+    chip.appendChild(createEl('span', 'watch-time-meta', { text: `• ${metaParts.join(' • ')}` }));
+  }
+  return chip;
+}
+
 function formatCurrencyShort(value) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount <= 0) return '';
@@ -2694,6 +2806,28 @@ function deriveMetadataAssignments(metadata, existing = {}, options = {}) {
 
   const runtime = metadata.Runtime && metadata.Runtime !== 'N/A' ? metadata.Runtime : '';
   setField('runtime', runtime);
+
+  const episodeCountValue = metadata.Episodes !== undefined ? metadata.Episodes : (metadata.TotalEpisodes !== undefined ? metadata.TotalEpisodes : undefined);
+  if (episodeCountValue !== undefined && episodeCountValue !== null && episodeCountValue !== '') {
+    const normalizedEpisodes = Number(episodeCountValue);
+    setField('episodeCount', Number.isFinite(normalizedEpisodes) && normalizedEpisodes > 0 ? normalizedEpisodes : episodeCountValue);
+  }
+
+  const seasonCountValue = metadata.Seasons !== undefined ? metadata.Seasons : (metadata.TotalSeasons !== undefined ? metadata.TotalSeasons : undefined);
+  if (seasonCountValue !== undefined && seasonCountValue !== null && seasonCountValue !== '') {
+    const normalizedSeasons = Number(seasonCountValue);
+    setField('seasonCount', Number.isFinite(normalizedSeasons) && normalizedSeasons > 0 ? normalizedSeasons : seasonCountValue);
+  }
+
+  const episodeRuntimeValue = metadata.EpisodeRuntime !== undefined ? metadata.EpisodeRuntime : (metadata.RuntimePerEpisode !== undefined ? metadata.RuntimePerEpisode : undefined);
+  if (episodeRuntimeValue !== undefined && episodeRuntimeValue !== null && episodeRuntimeValue !== '') {
+    const runtimeMinutes = parseRuntimeMinutes(episodeRuntimeValue);
+    if (runtimeMinutes > 0) {
+      setField('episodeRuntime', runtimeMinutes);
+    } else if (typeof episodeRuntimeValue === 'number' && Number.isFinite(episodeRuntimeValue) && episodeRuntimeValue > 0) {
+      setField('episodeRuntime', episodeRuntimeValue);
+    }
+  }
 
   const poster = metadata.Poster && metadata.Poster !== 'N/A' ? metadata.Poster : '';
   setField('poster', poster);
@@ -3418,6 +3552,8 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
   const runtimeMinutes = mediaType === 'movie'
     ? detail.runtime
     : (Array.isArray(detail.episode_run_time) && detail.episode_run_time.length ? detail.episode_run_time[0] : null);
+  const totalEpisodes = mediaType === 'tv' ? Number(detail.number_of_episodes) || null : null;
+  const totalSeasons = mediaType === 'tv' ? Number(detail.number_of_seasons) || null : null;
   const crew = Array.isArray(detail.credits?.crew) ? detail.credits.crew : [];
   const directorCrew = crew.find(member => member && member.job === 'Director');
   const director = directorCrew?.name
@@ -3436,7 +3572,11 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
     Title: detail.title || detail.name || '',
     Year: releaseDate ? String(releaseDate).slice(0, 4) : '',
     Director: director,
-    Runtime: runtimeMinutes ? `${runtimeMinutes} min` : '',
+    Runtime: runtimeMinutes
+      ? mediaType === 'movie'
+        ? `${runtimeMinutes} min`
+        : `${runtimeMinutes} min/ep`
+      : '',
     Poster: poster || 'N/A',
     Plot: detail.overview || '',
     imdbID: imdbId,
@@ -3449,6 +3589,9 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
     OriginalLanguageIso: detail.original_language || '',
     EnglishDubAvailable: englishDubAvailable,
     TmdbID: tmdbId,
+    Episodes: totalEpisodes,
+    Seasons: totalSeasons,
+    EpisodeRuntime: runtimeMinutes || null,
   };
 }
 
@@ -4623,18 +4766,26 @@ function updateListStats(listType, entries) {
   const statsEl = document.getElementById(`${listType}-stats`);
   if (!statsEl) return;
   const count = Array.isArray(entries) ? entries.length : 0;
-  if (listType === 'movies') {
+  const nounMap = {
+    movies: 'movie',
+    tvShows: 'show',
+    anime: 'anime',
+    books: 'item',
+  };
+  const noun = nounMap[listType] || 'item';
+  const label = `${count} ${noun}${count === 1 ? '' : 's'}`;
+  const watchTimeEligible = ['movies', 'tvShows', 'anime'].includes(listType);
+  if (watchTimeEligible) {
     const totalMinutes = (Array.isArray(entries) ? entries : []).reduce((sum, [, item]) => {
-      return sum + parseRuntimeMinutes(item && item.runtime);
+      return sum + estimateItemWatchMinutes(listType, item);
     }, 0);
-    const label = `${count} movie${count === 1 ? '' : 's'}`;
     const runtimeLabel = totalMinutes > 0
-      ? `${formatRuntimeDuration(totalMinutes)} total runtime`
-      : 'Runtime unavailable';
+      ? `${formatRuntimeDuration(totalMinutes)} total watch time`
+      : 'Watch time unavailable';
     statsEl.textContent = `${label} • ${runtimeLabel}`;
     return;
   }
-  statsEl.textContent = `${count} item${count === 1 ? '' : 's'}`;
+  statsEl.textContent = label;
 }
 
 function sanitizeAniListDescription(text) {

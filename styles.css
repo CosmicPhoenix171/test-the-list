@@ -244,6 +244,10 @@ h1{margin:0 0 .35rem 0;font-size:1.8rem;letter-spacing:.4px}
 .card.collapsible.movie-card .meta{font-size:.82rem}
 .card.collapsible.movie-card .actor-line{font-size:.8rem}
 .movie-card-info{display:flex;flex-direction:column;gap:.3rem;width:100%}
+.watch-time-chip{display:flex;align-items:baseline;gap:.35rem;font-size:.85rem;color:var(--text-300);flex-wrap:wrap}
+.watch-time-chip .watch-time-label{font-weight:700;color:var(--text-100);text-transform:uppercase;font-size:.72rem;letter-spacing:.04em}
+.watch-time-chip .watch-time-value{font-weight:600;color:var(--text-100)}
+.watch-time-chip .watch-time-meta{color:var(--text-500);font-size:.78rem}
 .movie-card-header{display:flex;flex-direction:column;gap:.35rem;align-items:center}
 .card.collapsible.movie-card.expanded .movie-card-header{align-items:flex-start}
 .movie-card-details{display:none;flex-direction:column;gap:.65rem;border-left:1px solid transparent;padding-left:0;width:100%}
