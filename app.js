@@ -65,6 +65,7 @@ const ANIME_STATUS_PRIORITY = {
   HIATUS: 1,
 };
 const METADATA_SCHEMA_VERSION = 1;
+const METADATA_REFRESH_COOLDOWN_MS = 1000 * 60 * 5; // avoid hitting metadata APIs repeatedly
 const ANIME_FRANCHISE_IGNORE_KEY = 'animeFranchiseIgnoredIds';
 const INTRO_SESSION_KEY = 'introPlayed';
 const ANIME_FRANCHISE_RELATION_TYPES = new Set([
@@ -106,6 +107,7 @@ const metadataRefreshInflight = new Set();
 const seriesCarouselState = {};
 const jikanNotFoundAnimeIds = new Set();
 const animeFranchiseMissingHashes = new Map();
+const metadataRefreshHistory = new Map();
 const unifiedFilters = {
   search: '',
   types: new Set(PRIMARY_LIST_TYPES)
@@ -2694,14 +2696,22 @@ function needsMetadataRefresh(listType, item) {
   return getMissingMetadataFields(item, listType).length > 0;
 }
 
+function shouldSkipMetadataRefresh(key) {
+  if (!key) return false;
+  const lastAttempt = metadataRefreshHistory.get(key);
+  if (!lastAttempt) return false;
+  return (Date.now() - lastAttempt) < METADATA_REFRESH_COOLDOWN_MS;
+}
+
 function refreshTmdbMetadataForItem(listType, itemId, item, missingFields = []) {
   if (!TMDB_API_KEY) {
     maybeWarnAboutTmdbKey();
     return;
   }
   const key = `${listType}:${itemId}`;
-  if (metadataRefreshInflight.has(key)) return;
+  if (metadataRefreshInflight.has(key) || shouldSkipMetadataRefresh(key)) return;
   metadataRefreshInflight.add(key);
+  metadataRefreshHistory.set(key, Date.now());
 
   const title = item.title || '[untitled]';
   const yearInfo = item.year ? ` (${item.year})` : '';
@@ -2734,8 +2744,9 @@ function refreshTmdbMetadataForItem(listType, itemId, item, missingFields = []) 
 function refreshAniListMetadataForItem(itemId, item) {
   const listType = 'anime';
   const key = `${listType}:${itemId}`;
-  if (metadataRefreshInflight.has(key)) return;
+  if (metadataRefreshInflight.has(key) || shouldSkipMetadataRefresh(key)) return;
   metadataRefreshInflight.add(key);
+  metadataRefreshHistory.set(key, Date.now());
   const lookup = {
     aniListId: item.aniListId || item.anilistId || item.AniListId || '',
     title: item.title || '',
