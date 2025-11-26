@@ -374,7 +374,8 @@ h1{margin:0 0 .35rem 0;font-size:1.8rem;letter-spacing:.4px}
 @keyframes introTmReveal{0%{opacity:0;transform:translateY(-16px)}100%{opacity:1;transform:translateY(0)}}
 @keyframes globalLoadingSpin{to{transform:rotate(360deg)}}
 
-#tm-rain-layer{position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden}
+#tm-rain-layer{position:fixed;inset:0;pointer-events:none;z-index:1300;overflow:hidden;opacity:0;transition:opacity .3s ease}
+#tm-rain-layer.active{opacity:1}
 .tm-sprite{
   position:absolute;
   left:0;
@@ -385,6 +386,7 @@ h1{margin:0 0 .35rem 0;font-size:1.8rem;letter-spacing:.4px}
   text-shadow:0 0 18px rgba(255,0,128,0.45);
   will-change:transform;
   user-select:none;
+  pointer-events:none;
   animation:tmRainbow 4.8s linear infinite;
   transition:color .3s ease,text-shadow .3s ease;
 }

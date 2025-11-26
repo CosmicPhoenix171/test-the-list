@@ -170,11 +170,169 @@ let typeFilterButtons = [];
 let typeFilterDelegationBound = false;
 const userNameEl = document.getElementById('user-name');
 
-const tmEasterEgg = {
-  bindTriggers: () => {},
-  getSeasonalTheme: () => 'default',
-  getCurrentTmTheme: () => 'default'
-};
+const tmEasterEgg = (() => {
+  const TRIGGER_SELECTOR = '.tm';
+  const LAYER_ID = 'tm-rain-layer';
+  const MIN_SPRITES = 18;
+  const MAX_SPRITES = 32;
+  const MIN_FALL_MS = 2200;
+  const MAX_FALL_MS = 3600;
+  const BURST_COOLDOWN_MS = 1200;
+  const THEMES = {
+    default: { glyph: 'TM', colors: ['#ff2679', '#7df2c9', '#50c9ff'] },
+    pride: { glyph: 'TM', colors: ['#ff7aa2', '#ffb347', '#fff275', '#7df2c9', '#50c9ff', '#c084fc'] },
+    spooky: { glyph: 'TM', colors: ['#fb923c', '#f97316', '#fde68a', '#f87171'] },
+    festive: { glyph: 'TM', colors: ['#7df2c9', '#50c9ff', '#f5c568', '#fef9c3'] },
+  };
+  let layerEl = null;
+  let hideTimer = null;
+  let lastBurstAt = 0;
+  let activeTheme = 'default';
+  const activeAnimations = new Set();
+  let triggersBound = false;
+
+  const rand = (min, max) => Math.random() * (max - min) + min;
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  function ensureLayer() {
+    if (layerEl && document.body.contains(layerEl)) return layerEl;
+    layerEl = document.getElementById(LAYER_ID);
+    if (!layerEl) {
+      layerEl = document.createElement('div');
+      layerEl.id = LAYER_ID;
+      layerEl.setAttribute('aria-hidden', 'true');
+      layerEl.classList.add('tm-rain-layer');
+      document.body.appendChild(layerEl);
+    }
+    return layerEl;
+  }
+
+  function resolveThemeName(preferred) {
+    if (preferred && THEMES[preferred]) return preferred;
+    return getSeasonalTheme();
+  }
+
+  function resolveTheme(name) {
+    return THEMES[name] || THEMES.default;
+  }
+
+  function hideLayerSoon() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (!activeAnimations.size && layerEl) {
+        layerEl.classList.remove('active');
+      }
+    }, 650);
+  }
+
+  function spawnSprite(themeName) {
+    const layer = ensureLayer();
+    if (!layer) return;
+    const palette = resolveTheme(themeName);
+    const sprite = document.createElement('span');
+    sprite.className = 'tm-sprite';
+    sprite.textContent = palette.glyph || 'TM';
+
+    const startX = rand(5, 95);
+    const drift = rand(-18, 18);
+    const endX = clamp(startX + drift, 3, 97);
+    const duration = rand(MIN_FALL_MS, MAX_FALL_MS);
+    const color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
+
+    sprite.style.left = `${startX}%`;
+    sprite.style.top = '-10vh';
+    sprite.style.fontSize = `${rand(0.9, 1.6)}rem`;
+    sprite.style.color = color;
+    sprite.style.textShadow = `0 0 16px ${color}`;
+    layer.appendChild(sprite);
+
+    const animation = sprite.animate([
+      { top: '-10vh', left: `${startX}%`, opacity: 0, transform: 'translate(-50%, -50%) scale(0.85)' },
+      { top: '110vh', left: `${endX}%`, opacity: 0.95, transform: `translate(-50%, -50%) rotate(${drift * 2}deg) scale(1.2)` },
+    ], {
+      duration,
+      easing: 'linear',
+      fill: 'forwards',
+    });
+
+    animation.onfinish = () => {
+      sprite.remove();
+      activeAnimations.delete(animation);
+      hideLayerSoon();
+    };
+
+    activeAnimations.add(animation);
+  }
+
+  function sprinkle(themeName) {
+    const layer = ensureLayer();
+    if (!layer) return;
+    layer.classList.add('active');
+    layer.dataset.theme = themeName;
+    activeTheme = themeName;
+    const count = Math.round(rand(MIN_SPRITES, MAX_SPRITES));
+    for (let i = 0; i < count; i += 1) {
+      setTimeout(() => spawnSprite(themeName), i * 45);
+    }
+  }
+
+  function triggerBurst(preferredTheme) {
+    const now = Date.now();
+    if (now - lastBurstAt < BURST_COOLDOWN_MS) return;
+    lastBurstAt = now;
+    const themeName = resolveThemeName(preferredTheme);
+    sprinkle(themeName);
+  }
+
+  function handleTriggerActivation(event) {
+    if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    const theme = event.currentTarget?.dataset.tmTheme;
+    triggerBurst(theme);
+  }
+
+  function enhanceTrigger(el) {
+    if (!el || el.dataset.tmBound === '1') return;
+    el.dataset.tmBound = '1';
+    el.classList.add('tm-clickable');
+    if (!el.hasAttribute('tabindex')) {
+      el.setAttribute('tabindex', '0');
+    }
+    if (!el.hasAttribute('role')) {
+      el.setAttribute('role', 'button');
+    }
+    el.addEventListener('click', handleTriggerActivation);
+    el.addEventListener('keydown', handleTriggerActivation);
+  }
+
+  function bindTriggers() {
+    if (triggersBound) return;
+    const wire = () => {
+      document.querySelectorAll(TRIGGER_SELECTOR).forEach(enhanceTrigger);
+      triggersBound = true;
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', wire, { once: true });
+    } else {
+      wire();
+    }
+  }
+
+  function getSeasonalTheme() {
+    const month = new Date().getMonth();
+    if (month === 5) return 'pride';
+    if (month === 9 || month === 10) return 'spooky';
+    if (month === 11) return 'festive';
+    return 'default';
+  }
+
+  return {
+    bindTriggers,
+    getSeasonalTheme,
+    getCurrentTmTheme: () => activeTheme || getSeasonalTheme(),
+    triggerBurst,
+  };
+})();
 
 function closeAddModal() {
   if (!modalRoot) return;
