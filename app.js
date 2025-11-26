@@ -46,6 +46,12 @@ const firebaseConfig = {
 };
 
 const PRIMARY_LIST_TYPES = ['movies', 'tvShows', 'anime', 'books'];
+const MEDIA_TYPE_LABELS = {
+  movies: 'Movies',
+  tvShows: 'TV Shows',
+  anime: 'Anime',
+  books: 'Books',
+};
 const COLLAPSIBLE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const AUTOCOMPLETE_LISTS = new Set(['movies', 'tvShows', 'anime', 'books']);
 const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
