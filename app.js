@@ -3240,6 +3240,9 @@ function deriveMetadataAssignments(metadata, existing = {}, options = {}) {
   if (metadata.AnimeStatus) {
     setField('animeStatus', metadata.AnimeStatus);
   }
+  if (metadata.Status) {
+    setField('status', metadata.Status);
+  }
   if (Array.isArray(metadata.AnimeGenres) && metadata.AnimeGenres.length) {
     setField('animeGenres', metadata.AnimeGenres);
   }
@@ -3947,6 +3950,7 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
   const totalEpisodes = mediaType === 'tv' ? Number(detail.number_of_episodes) || null : null;
   const totalSeasons = mediaType === 'tv' ? Number(detail.number_of_seasons) || null : null;
   const tvSeasonEntries = mediaType === 'tv' ? extractTvSeasonMetadata(detail) : [];
+  const statusLabel = detail.status || '';
   const crew = Array.isArray(detail.credits?.crew) ? detail.credits.crew : [];
   const directorCrew = crew.find(member => member && member.job === 'Director');
   const director = directorCrew?.name
@@ -3993,6 +3997,9 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
     if (tvSeasonEntries.length || totalSeasons) {
       payload.TvSeasonCount = tvSeasonEntries.length || totalSeasons || null;
     }
+  }
+  if (statusLabel) {
+    payload.Status = statusLabel;
   }
   return payload;
 }
