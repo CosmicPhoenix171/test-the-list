@@ -982,8 +982,22 @@ function renderUnifiedLibrary() {
   if (!container) return;
   container.innerHTML = '';
 
-  const filteredEntries = new Map();
-  let hasAnyItems = false;
+  const cards = collectUnifiedCards();
+  if (!cards.length) {
+    container.innerHTML = '<div class="empty-state">No items found.</div>';
+    return;
+  }
+
+  cards.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+  const combinedGrid = document.createElement('div');
+  combinedGrid.className = 'movies-grid unified-grid';
+  cards.forEach(({ node }) => combinedGrid.appendChild(node));
+  container.appendChild(combinedGrid);
+}
+
+function collectUnifiedCards() {
+  const cards = [];
   PRIMARY_LIST_TYPES.forEach(listType => {
     if (!unifiedFilters.types.has(listType)) return;
     const data = listCaches[listType] || {};
@@ -996,50 +1010,35 @@ function renderUnifiedLibrary() {
       return true;
     });
     if (!entries.length) return;
-    hasAnyItems = true;
     entries.sort((a, b) => (a[1].title || '').localeCompare(b[1].title || ''));
-    filteredEntries.set(listType, entries);
-  });
 
-  if (!hasAnyItems) {
-    container.innerHTML = '<div class="empty-state">No items found.</div>';
-    return;
-  }
+    const tempSection = document.createElement('section');
+    tempSection.className = 'library-section unified-temp';
+    tempSection.style.display = 'none';
+    if (document.body) {
+      document.body.appendChild(tempSection);
+    }
+    if (isCollapsibleList(listType)) {
+      renderCollapsibleMediaGrid(listType, tempSection, entries);
+    } else {
+      const grid = document.createElement('div');
+      grid.className = 'movies-grid';
+      renderStandardList(grid, listType, entries);
+      tempSection.appendChild(grid);
+    }
 
-  const cards = [];
-  const animeEntries = filteredEntries.get('anime') || [];
-  if (animeEntries.length) {
-    const { displayRecords, leaderMembersByCardId } = prepareCollapsibleRecords('anime', animeEntries);
-    seriesGroups['anime'] = leaderMembersByCardId;
-    displayRecords.forEach(record => {
-      const card = buildCollapsibleMovieCard('anime', record.id, record.displayItem, record.index, {
-        displayEntryId: record.displayEntryId,
-      });
-      const title = (record.displayItem?.title || record.item?.title || '').trim();
-      cards.push({ node: card, sortKey: title.toLowerCase(), title });
+    const cardNodes = Array.from(tempSection.querySelectorAll('.movie-card'));
+    cardNodes.forEach(card => {
+      const titleEl = card.querySelector('.title');
+      const title = (titleEl ? titleEl.textContent : card.dataset.title || '').trim();
+      const sortKey = title.toLowerCase();
+      cards.push({ node: card, sortKey: sortKey || title, listType });
     });
-  }
-
-  filteredEntries.forEach((entries, listType) => {
-    if (listType === 'anime') return;
-    entries.forEach(([id, item]) => {
-      if (!item) return;
-      const card = buildStandardCard(listType, id, item);
-      const title = (item.title || '').trim();
-      cards.push({ node: card, sortKey: title.toLowerCase(), title });
-    });
+    if (tempSection.parentNode) {
+      tempSection.parentNode.removeChild(tempSection);
+    }
   });
-
-  cards.sort((a, b) => {
-    if (a.sortKey < b.sortKey) return -1;
-    if (a.sortKey > b.sortKey) return 1;
-    return 0;
-  });
-
-  const combinedGrid = document.createElement('div');
-  combinedGrid.className = 'movies-grid unified-grid';
-  cards.forEach(cardInfo => combinedGrid.appendChild(cardInfo.node));
-  container.appendChild(combinedGrid);
+  return cards;
 }
 
 function getListLabel(type) {
