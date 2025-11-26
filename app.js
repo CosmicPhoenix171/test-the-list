@@ -5458,11 +5458,15 @@ function surfaceJikanLookupIssue({ animeId, status, message = '', context = null
   const malTarget = animeId || context?.aniListId;
   const urlHint = malTarget ? `${MYANIMELIST_ANIME_URL}/${malTarget}` : '';
   const summary = [descriptor, stage, detail, urlHint].filter(Boolean).join(' • ');
-  pushNotification({
-    title: 'MyAnimeList lookup issue',
-    message: summary,
-    duration: 12000,
-  });
+  const payload = {
+    title: descriptor,
+    stage,
+    status,
+    detail,
+    malUrl: urlHint || undefined,
+    context,
+  };
+  console.error('MyAnimeList lookup issue:', summary, payload);
 }
 
 async function fetchJikanJson(path, params = {}) {
