@@ -67,6 +67,7 @@ const ANIME_STATUS_PRIORITY = {
 const METADATA_SCHEMA_VERSION = 1;
 const METADATA_REFRESH_COOLDOWN_MS = 1000 * 60 * 5; // avoid hitting metadata APIs repeatedly
 const ANIME_FRANCHISE_IGNORE_KEY = 'animeFranchiseIgnoredIds';
+const ANIME_FRANCHISE_LAST_SCAN_KEY = 'animeFranchiseLastScan';
 const INTRO_SESSION_KEY = 'introPlayed';
 const ANIME_FRANCHISE_RELATION_TYPES = new Set([
   'SEQUEL',
@@ -92,7 +93,7 @@ const ANIME_FRANCHISE_ALLOWED_FORMATS = new Set([
 ]);
 const ANIME_FRANCHISE_MAX_ENTRIES = 64;
 const ANIME_FRANCHISE_MAX_DEPTH = 3;
-const ANIME_FRANCHISE_RESCAN_INTERVAL_MS = 1000 * 60 * 60;
+const ANIME_FRANCHISE_RESCAN_INTERVAL_MS = 1000 * 60 * 60 * 24;
 const ANIME_FRANCHISE_SCAN_SERIES_LIMIT = 4;
 
 const listCaches = {};
@@ -116,8 +117,7 @@ const unifiedFilters = {
 let pendingAnimeScanData = null;
 let animeFranchiseScanTimer = null;
 let animeFranchiseScanInflight = false;
-let animeFranchiseLastScanTime = 0;
-let animeFranchiseLastScanSignature = '';
+let animeFranchiseLastScanTime = Number(safeLocalStorageGet(ANIME_FRANCHISE_LAST_SCAN_KEY)) || 0;
 let lastJikanRequestTimestamp = 0;
 let lastJikanRateLimitNotice = 0;
 let lastJikanNetworkIssueNotice = 0;
@@ -4781,14 +4781,6 @@ function getAniListIdFromItem(item) {
   return value ? String(value) : '';
 }
 
-function computeAnimeDatasetSignature(data) {
-  const ids = Object.values(data || {})
-    .map(item => getAniListIdFromItem(item))
-    .filter(Boolean)
-    .sort();
-  return ids.join(',');
-}
-
 function buildAnimeFranchiseSeriesMap(data) {
   const map = new Map();
   Object.values(data || {}).forEach(item => {
@@ -4817,18 +4809,17 @@ function buildAnimeFranchiseSeriesMap(data) {
 
 function scheduleAnimeFranchiseScan(data) {
   pendingAnimeScanData = data;
-  const signature = computeAnimeDatasetSignature(data);
   const now = Date.now();
-  const shouldRun = signature !== animeFranchiseLastScanSignature
-    || (now - animeFranchiseLastScanTime) > ANIME_FRANCHISE_RESCAN_INTERVAL_MS;
+  const elapsed = now - animeFranchiseLastScanTime;
+  const shouldRun = !animeFranchiseLastScanTime || elapsed >= ANIME_FRANCHISE_RESCAN_INTERVAL_MS;
   if (!shouldRun) return;
-  animeFranchiseLastScanSignature = signature;
   if (animeFranchiseScanTimer) {
     clearTimeout(animeFranchiseScanTimer);
   }
   animeFranchiseScanTimer = setTimeout(() => {
     animeFranchiseScanTimer = null;
     animeFranchiseLastScanTime = Date.now();
+    safeLocalStorageSet(ANIME_FRANCHISE_LAST_SCAN_KEY, animeFranchiseLastScanTime);
     runAnimeFranchiseScan(pendingAnimeScanData);
   }, 1000);
 }
