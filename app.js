@@ -58,6 +58,11 @@ const sortModes = {};
 const listeners = {};
 const animeFranchiseIgnoredIds = new Set();
 const suggestionForms = new Set();
+const seriesGroups = {};
+const unifiedFilters = {
+  search: '',
+  types: new Set(PRIMARY_LIST_TYPES)
+};
 
 let currentUser = null;
 let appInitialized = false;
@@ -71,6 +76,9 @@ const modalRoot = document.getElementById('modal-root');
 const backToTopBtn = document.getElementById('back-to-top');
 const appRoot = document.getElementById('app');
 const loginScreen = document.getElementById('login-screen');
+const unifiedSearchInput = document.getElementById('library-search');
+const typeFilterButtons = document.querySelectorAll('[data-type-toggle]');
+const userNameEl = document.getElementById('user-name');
 
 const tmEasterEgg = {
   bindTriggers: () => {},
@@ -904,6 +912,68 @@ function detachAllListeners() {
     if (typeof listeners[k] === 'function') listeners[k]();
   }
   Object.keys(listeners).forEach(k => delete listeners[k]);
+}
+
+function renderList(listType, data) {
+  listCaches[listType] = data || {};
+  renderUnifiedLibrary();
+}
+
+function renderUnifiedLibrary() {
+  const container = document.getElementById('combined-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  let hasAnyItems = false;
+
+  PRIMARY_LIST_TYPES.forEach(listType => {
+    if (!unifiedFilters.types.has(listType)) return;
+    const data = listCaches[listType] || {};
+    const entries = Object.entries(data).filter(([_, item]) => {
+      if (!item) return false;
+      if (unifiedFilters.search) {
+        const title = (item.title || '').toLowerCase();
+        if (!title.includes(unifiedFilters.search)) return false;
+      }
+      return true;
+    });
+
+    if (entries.length === 0) return;
+    hasAnyItems = true;
+
+    // Sort by title
+    entries.sort((a, b) => (a[1].title || '').localeCompare(b[1].title || ''));
+
+    const section = document.createElement('section');
+    section.className = 'library-section';
+    const heading = document.createElement('h3');
+    heading.textContent = getListLabel(listType);
+    section.appendChild(heading);
+
+    if (isCollapsibleList(listType)) {
+       renderCollapsibleMediaGrid(listType, section, entries);
+    } else {
+       const grid = document.createElement('div');
+       grid.className = 'movies-grid';
+       renderStandardList(grid, listType, entries);
+       section.appendChild(grid);
+    }
+    container.appendChild(section);
+  });
+
+  if (!hasAnyItems) {
+    container.innerHTML = '<div class="empty-state">No items found.</div>';
+  }
+}
+
+function getListLabel(type) {
+  switch (type) {
+    case 'movies': return 'Movies';
+    case 'tvShows': return 'TV Shows';
+    case 'anime': return 'Anime';
+    case 'books': return 'Books';
+    default: return type;
+  }
 }
 
 // Load list items in real-time
