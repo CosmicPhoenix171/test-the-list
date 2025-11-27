@@ -197,7 +197,7 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
     }
     
     const baseProgress = elapsed / baseDuration;
-    const acceleratedProgress = Math.pow(baseProgress, 0.85);
+    const acceleratedProgress = Math.pow(baseProgress, 0.4);
     currentMinutes = finalMinutes * acceleratedProgress;
     
     if (currentMinutes >= finalMinutes) {
