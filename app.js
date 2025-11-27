@@ -131,6 +131,14 @@ const MEDIA_TYPE_LABELS = {
 };
 const FINISH_RATING_MIN = 1;
 const FINISH_RATING_MAX = 10;
+const RUNTIME_THRESHOLDS = {
+  MINUTES: { max: 60, color: 'minutes', label: 'minutes' },
+  HOURS: { max: 1440, color: 'hours', label: 'hours' },
+  DAYS: { max: 10080, color: 'days', label: 'days' },
+  WEEKS: { max: 43200, color: 'weeks', label: 'weeks' },
+  MONTHS: { max: 525600, color: 'months', label: 'months' },
+  YEARS: { color: 'years', label: 'years' }
+};
 
 function getDisplayCacheMap() {
   return showFinishedOnly ? finishedCaches : listCaches;
@@ -144,6 +152,48 @@ function getDisplayCache(listType) {
 function formatLibraryStatNumber(value) {
   const num = Number(value) || 0;
   return num.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function getRuntimeThresholdClass(totalMinutes) {
+  if (totalMinutes < RUNTIME_THRESHOLDS.MINUTES.max) return 'runtime-minutes';
+  if (totalMinutes < RUNTIME_THRESHOLDS.HOURS.max) return 'runtime-hours';
+  if (totalMinutes < RUNTIME_THRESHOLDS.DAYS.max) return 'runtime-days';
+  if (totalMinutes < RUNTIME_THRESHOLDS.WEEKS.max) return 'runtime-weeks';
+  if (totalMinutes < RUNTIME_THRESHOLDS.MONTHS.max) return 'runtime-months';
+  return 'runtime-years';
+}
+
+function animateRuntimeProgression(chipElement, finalMinutes) {
+  if (!chipElement || finalMinutes <= 0) return;
+  
+  const thresholds = [
+    { max: 60, class: 'runtime-minutes' },
+    { max: 1440, class: 'runtime-hours' },
+    { max: 10080, class: 'runtime-days' },
+    { max: 43200, class: 'runtime-weeks' },
+    { max: 525600, class: 'runtime-months' },
+    { max: Infinity, class: 'runtime-years' }
+  ];
+  
+  let currentThresholdIndex = 0;
+  const duration = 1400;
+  const steps = Math.min(thresholds.length, thresholds.findIndex(t => finalMinutes < t.max) + 1);
+  const stepDuration = duration / steps;
+  
+  function updateThreshold() {
+    if (currentThresholdIndex >= steps) return;
+    
+    thresholds.forEach(t => chipElement.classList.remove(t.class));
+    chipElement.classList.add(thresholds[currentThresholdIndex].class);
+    
+    currentThresholdIndex++;
+    
+    if (currentThresholdIndex < steps) {
+      setTimeout(updateThreshold, stepDuration);
+    }
+  }
+  
+  setTimeout(updateThreshold, 300);
 }
 
 function buildLibraryStatChip(label, value, options = {}) {
@@ -1806,13 +1856,18 @@ function updateLibraryRuntimeStats() {
     ? `${formatRuntimeDurationDetailed(stats.totalMinutes)} to finish`
     : 'Runtime info unavailable';
 
+  const thresholdClass = getRuntimeThresholdClass(stats.totalMinutes);
   const movieChip = buildLibraryStatChip(movieLabel, formatLibraryStatNumber(stats.movieCount));
   const episodeChip = buildLibraryStatChip(episodeLabel, formatLibraryStatNumber(stats.episodeCount));
-  const runtimeChip = buildLibraryStatChip('Finish Time', runtimeText, { modifier: 'runtime' });
+  const runtimeChip = buildLibraryStatChip('Finish Time', runtimeText, { 
+    modifier: `runtime ${thresholdClass}` 
+  });
 
   libraryStatsSummaryEl.appendChild(movieChip);
   libraryStatsSummaryEl.appendChild(episodeChip);
   libraryStatsSummaryEl.appendChild(runtimeChip);
+
+  animateRuntimeProgression(runtimeChip, stats.totalMinutes);
 
   const spokenSummary = `${stats.movieCount} ${movieLabel}, ${stats.episodeCount} ${episodeLabel}, ${runtimeText}`;
   libraryStatsSummaryEl.setAttribute('aria-label', spokenSummary);
