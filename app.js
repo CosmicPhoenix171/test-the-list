@@ -171,34 +171,28 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
   if (!valueEl) return;
   
   const thresholds = [
-    { max: 60, class: 'runtime-minutes', speed: 1 },
-    { max: 1440, class: 'runtime-hours', speed: 1.5 },
-    { max: 10080, class: 'runtime-days', speed: 2.2 },
-    { max: 43200, class: 'runtime-weeks', speed: 3.2 },
-    { max: 525600, class: 'runtime-months', speed: 4.5 },
-    { max: Infinity, class: 'runtime-years', speed: 6 }
+    { max: 60, class: 'runtime-minutes', increment: 0.5 },
+    { max: 1440, class: 'runtime-hours', increment: 8 },
+    { max: 10080, class: 'runtime-days', increment: 80 },
+    { max: 43200, class: 'runtime-weeks', increment: 350 },
+    { max: 525600, class: 'runtime-months', increment: 1800 },
+    { max: Infinity, class: 'runtime-years', increment: 8000 }
   ];
   
-  const baseDuration = 5000;
   let currentMinutes = 0;
   let lastThresholdIndex = -1;
-  let currentSpeed = 1;
-  const startTime = performance.now();
+  let currentIncrement = 0.5;
   
-  function updateFrame(timestamp) {
-    const elapsed = timestamp - startTime;
-    
+  function updateFrame() {
     const thresholdIndex = thresholds.findIndex(t => currentMinutes < t.max);
     if (thresholdIndex >= 0 && thresholdIndex !== lastThresholdIndex) {
-      currentSpeed = thresholds[thresholdIndex].speed;
+      currentIncrement = thresholds[thresholdIndex].increment;
       thresholds.forEach(t => chipElement.classList.remove(t.class));
       chipElement.classList.add(thresholds[thresholdIndex].class);
       lastThresholdIndex = thresholdIndex;
     }
     
-    const baseProgress = elapsed / baseDuration;
-    const acceleratedProgress = Math.pow(baseProgress, 0.4);
-    currentMinutes = finalMinutes * acceleratedProgress;
+    currentMinutes += currentIncrement;
     
     if (currentMinutes >= finalMinutes) {
       currentMinutes = finalMinutes;
@@ -207,7 +201,7 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
     const displayText = formatRuntimeDurationDetailed(Math.floor(currentMinutes)) + ' to finish';
     valueEl.textContent = displayText;
     
-    if (elapsed < baseDuration && currentMinutes < finalMinutes) {
+    if (currentMinutes < finalMinutes) {
       requestAnimationFrame(updateFrame);
     } else {
       valueEl.textContent = formatRuntimeDurationDetailed(finalMinutes) + ' to finish';
