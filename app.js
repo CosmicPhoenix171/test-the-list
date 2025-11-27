@@ -1545,35 +1545,35 @@ function collectFallbackKeywordsForList(listType, bucket) {
       bucket.add('book');
       break;
     default:
-      }
+      break;
+  }
+}
 
-      function buildListTypeKeywordSet(listType) {
-        const keywords = new Set();
-        collectFallbackKeywordsForList(listType, keywords);
-        return keywords;
-      }
-
-      function cardMatchesBadgeFilters(listType, badgeKeywords) {
+function buildListTypeKeywordSet(listType) {
+  const keywords = new Set();
+  collectFallbackKeywordsForList(listType, keywords);
+  return keywords;
+}
 
 function cardMatchesBadgeFilters(listType, badgeKeywords) {
   const activeFilters = unifiedFilters.types;
   if (!activeFilters || !activeFilters.size || activeFilters.size === PRIMARY_LIST_TYPES.length) {
-        const keywords = badgeKeywords || buildListTypeKeywordSet(listType);
-        const hasKeyword = (token) => keywords && keywords.has(token);
+    return true;
   }
-  const hasKeyword = (token) => badgeKeywords && badgeKeywords.has(token);
+  const keywords = badgeKeywords || buildListTypeKeywordSet(listType);
+  const hasKeyword = (token) => keywords && keywords.has(token);
   return Array.from(activeFilters).some(type => {
     switch (type) {
       case 'movies':
         return listType === 'movies' || hasKeyword('movie');
       case 'tvShows':
-        return listType === 'tvShows' || hasKeyword('tv');
+        return listType === 'tvShows' || hasKeyword('tv') || hasKeyword('series');
       case 'anime':
         return listType === 'anime' || hasKeyword('anime');
       case 'books':
         return listType === 'books' || hasKeyword('book');
       default:
-        return true;
+        return false;
     }
   });
 }
