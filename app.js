@@ -1446,6 +1446,7 @@ function renderList(listType, data) {
 // ============================================================================
 
 function renderUnifiedLibrary() {
+  updateLibraryRuntimeStats();
   if (!combinedListEl) return;
   const hasLoadedAny = PRIMARY_LIST_TYPES.some(type => listCaches[type] !== undefined);
   if (!hasLoadedAny) {
@@ -1522,6 +1523,119 @@ function collectUnifiedEntries() {
     }
   });
   return allEntries;
+}
+
+function updateLibraryRuntimeStats() {
+  if (!libraryStatsSummaryEl) return;
+  const stats = computeLibraryRuntimeStats();
+  if (!stats.hasAnyData) {
+    libraryStatsSummaryEl.textContent = 'Totals update once your lists load.';
+    return;
+  }
+  const movieLabel = `${stats.movieCount} movie${stats.movieCount === 1 ? '' : 's'}`;
+  const episodeLabel = `${stats.episodeCount} episode${stats.episodeCount === 1 ? '' : 's'}`;
+  const runtimeLabel = stats.totalMinutes > 0
+    ? `${formatRuntimeDurationDetailed(stats.totalMinutes)} to finish`
+    : 'Runtime info unavailable';
+  libraryStatsSummaryEl.textContent = `${movieLabel} • ${episodeLabel} • ${runtimeLabel}`;
+}
+
+function computeLibraryRuntimeStats() {
+  const stats = {
+    hasAnyData: PRIMARY_LIST_TYPES.some(type => listCaches[type] !== undefined),
+    movieCount: 0,
+    episodeCount: 0,
+    totalMinutes: 0,
+  };
+  if (!stats.hasAnyData) {
+    return stats;
+  }
+
+  Object.values(listCaches.movies || {}).forEach(item => {
+    if (!item) return;
+    stats.movieCount += 1;
+    const minutes = estimateMovieRuntimeMinutes(item);
+    if (minutes > 0) {
+      stats.totalMinutes += minutes;
+    }
+  });
+
+  Object.values(listCaches.tvShows || {}).forEach(item => {
+    if (!item) return;
+    const episodes = getTvEpisodeCount(item);
+    if (episodes > 0) {
+      stats.episodeCount += episodes;
+      const runtimePerEpisode = estimateTvEpisodeRuntimeMinutes(item);
+      if (runtimePerEpisode > 0) {
+        stats.totalMinutes += runtimePerEpisode * episodes;
+      }
+    }
+  });
+
+  Object.values(listCaches.anime || {}).forEach(item => {
+    if (!item) return;
+    const episodes = getAnimeEpisodeCount(item);
+    if (episodes > 0) {
+      stats.episodeCount += episodes;
+    }
+    const runtimePerEpisode = estimateAnimeEpisodeRuntimeMinutes(item);
+    if (runtimePerEpisode > 0) {
+      const multiplier = episodes > 0 ? episodes : (isAnimeMovieEntry(item) ? 1 : 0);
+      if (multiplier > 0) {
+        stats.totalMinutes += runtimePerEpisode * multiplier;
+      }
+    }
+  });
+
+  return stats;
+}
+
+function estimateMovieRuntimeMinutes(item) {
+  if (!item) return 0;
+  const candidates = [item.runtimeMinutes, item.runtime, item.Runtime, item.duration];
+  for (const value of candidates) {
+    const minutes = parseRuntimeMinutes(value);
+    if (minutes > 0) {
+      return minutes;
+    }
+  }
+  return 0;
+}
+
+function estimateTvEpisodeRuntimeMinutes(item) {
+  if (!item) return 0;
+  const candidates = [item.tvEpisodeRuntime, item.tvRuntime, item.runtime];
+  for (const value of candidates) {
+    const minutes = parseRuntimeMinutes(value);
+    if (minutes > 0) {
+      return minutes;
+    }
+  }
+  return 0;
+}
+
+function getAnimeEpisodeCount(item) {
+  if (!item) return 0;
+  const count = Number(item.animeEpisodes || item.episodes || item.totalEpisodes);
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+function estimateAnimeEpisodeRuntimeMinutes(item) {
+  if (!item) return 0;
+  const candidates = [item.animeDuration, item.duration, item.runtime];
+  for (const value of candidates) {
+    const minutes = parseRuntimeMinutes(value);
+    if (minutes > 0) {
+      return minutes;
+    }
+  }
+  return 0;
+}
+
+function isAnimeMovieEntry(item) {
+  if (!item) return false;
+  const format = String(item.animeFormat || item.format || '').trim().toUpperCase();
+  return format === 'MOVIE' || format === 'FILM';
 }
 
 function matchesUnifiedSearch(item, query) {
@@ -2927,12 +3041,45 @@ function parseRuntimeMinutes(value) {
 
 function formatRuntimeDuration(totalMinutes) {
   if (!totalMinutes || totalMinutes <= 0) return '';
+  const breakdown = breakdownDurationMinutes(totalMinutes);
+  const parts = [];
+  if (breakdown.years) parts.push(`${breakdown.years}y`);
+  if (breakdown.months) parts.push(`${breakdown.months}mth`);
+  if (breakdown.days) parts.push(`${breakdown.days}d`);
+  if (breakdown.hours) parts.push(`${breakdown.hours}h`);
+  if (breakdown.minutes) parts.push(`${breakdown.minutes}m`);
+  return parts.join(' ');
+}
+
+function formatRuntimeDurationDetailed(totalMinutes) {
+  if (!totalMinutes || totalMinutes <= 0) return '';
+  const breakdown = breakdownDurationMinutes(totalMinutes);
+  const parts = [];
+  if (breakdown.years) parts.push(formatDurationUnit(breakdown.years, 'year'));
+  if (breakdown.months) parts.push(formatDurationUnit(breakdown.months, 'month'));
+  if (breakdown.days) parts.push(formatDurationUnit(breakdown.days, 'day'));
+  if (breakdown.hours) parts.push(formatDurationUnit(breakdown.hours, 'hour'));
+  if (breakdown.minutes) {
+    parts.push(formatDurationUnit(breakdown.minutes, 'minute'));
+  }
+  if (!parts.length) {
+    return 'Less than a minute';
+  }
+  return parts.join(', ');
+}
+
+function formatDurationUnit(value, unitLabel) {
+  const amount = Math.floor(value);
+  if (!amount) return '';
+  return `${amount} ${unitLabel}${amount === 1 ? '' : 's'}`;
+}
+
+function breakdownDurationMinutes(totalMinutes) {
   const minutesPerHour = 60;
   const minutesPerDay = minutesPerHour * 24;
   const minutesPerMonth = minutesPerDay * 30;
   const minutesPerYear = minutesPerDay * 365;
-
-  let remaining = totalMinutes;
+  let remaining = Math.max(0, Math.floor(totalMinutes));
   const years = Math.floor(remaining / minutesPerYear);
   remaining -= years * minutesPerYear;
   const months = Math.floor(remaining / minutesPerMonth);
@@ -2942,14 +3089,7 @@ function formatRuntimeDuration(totalMinutes) {
   const hours = Math.floor(remaining / minutesPerHour);
   remaining -= hours * minutesPerHour;
   const minutes = remaining;
-
-  const parts = [];
-  if (years) parts.push(`${years}y`);
-  if (months) parts.push(`${months}mth`);
-  if (days) parts.push(`${days}d`);
-  if (hours) parts.push(`${hours}h`);
-  if (minutes) parts.push(`${minutes}m`);
-  return parts.join(' ');
+  return { years, months, days, hours, minutes };
 }
 
 function formatCurrencyShort(value) {
