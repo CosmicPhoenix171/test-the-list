@@ -146,12 +146,17 @@ const libraryStatsSummaryEl = document.getElementById('library-stats-summary');
 const unifiedSearchInput = document.getElementById('library-search');
 const typeFilterButtons = document.querySelectorAll('[data-type-toggle]');
 const notificationCenter = document.getElementById('notification-center');
+const notificationShell = document.getElementById('notification-shell');
+const notificationBellBtn = document.getElementById('notification-bell');
+const notificationBadgeEl = document.getElementById('notification-count');
+const notificationEmptyStateEl = document.getElementById('notification-empty-state');
 const wheelModalTrigger = document.getElementById('open-wheel-modal');
 const wheelModalTemplate = document.getElementById('wheel-modal-template');
 let wheelSourceSelect = null;
 let wheelSpinnerEl = null;
 let wheelResultEl = null;
 let wheelModalState = null;
+let notificationPopoverOpen = false;
 const addModalTrigger = document.getElementById('open-add-modal');
 const addFormTemplatesContainer = document.getElementById('add-form-templates');
 const addFormTemplateMap = {};
@@ -1007,6 +1012,8 @@ function pushNotification({ title, message, duration = 9000 } = {}) {
 
   notificationCenter.appendChild(card);
   requestAnimationFrame(() => card.classList.add('visible'));
+  updateNotificationEmptyState();
+  updateNotificationBadge();
 
   let dismissed = false;
   let timerId = null;
@@ -1017,6 +1024,8 @@ function pushNotification({ title, message, duration = 9000 } = {}) {
     card.classList.remove('visible');
     setTimeout(() => {
       if (card.parentNode) card.parentNode.removeChild(card);
+      updateNotificationEmptyState();
+      updateNotificationBadge();
     }, 240);
   };
 
@@ -1035,6 +1044,68 @@ function pushNotification({ title, message, duration = 9000 } = {}) {
   });
 
   closeBtn.addEventListener('click', dismiss);
+}
+
+function initNotificationBell() {
+  if (!notificationBellBtn || !notificationCenter) return;
+  notificationBellBtn.addEventListener('click', () => {
+    toggleNotificationPopover();
+  });
+  document.addEventListener('click', handleNotificationDocumentClick);
+  document.addEventListener('keydown', handleNotificationKeydown);
+  updateNotificationBadge();
+  updateNotificationEmptyState();
+}
+
+function toggleNotificationPopover(forceState) {
+  const targetState = typeof forceState === 'boolean' ? forceState : !notificationPopoverOpen;
+  setNotificationPopoverState(targetState);
+}
+
+function closeNotificationPopover() {
+  setNotificationPopoverState(false);
+}
+
+function setNotificationPopoverState(isOpen) {
+  if (!notificationCenter || !notificationBellBtn) return;
+  notificationPopoverOpen = Boolean(isOpen);
+  notificationCenter.classList.toggle('hidden', !notificationPopoverOpen);
+  notificationBellBtn.setAttribute('aria-expanded', notificationPopoverOpen ? 'true' : 'false');
+  if (notificationPopoverOpen) {
+    notificationCenter.focus();
+  }
+}
+
+function handleNotificationDocumentClick(event) {
+  if (!notificationPopoverOpen) return;
+  if (notificationShell && notificationShell.contains(event.target)) return;
+  closeNotificationPopover();
+}
+
+function handleNotificationKeydown(event) {
+  if (event.key !== 'Escape') return;
+  if (!notificationPopoverOpen) return;
+  closeNotificationPopover();
+  if (notificationBellBtn) {
+    notificationBellBtn.focus();
+  }
+}
+
+function updateNotificationBadge() {
+  if (!notificationBadgeEl) return;
+  const count = notificationCenter ? notificationCenter.querySelectorAll('.notification-card').length : 0;
+  notificationBadgeEl.textContent = count;
+  notificationBadgeEl.classList.toggle('hidden', count === 0);
+  if (notificationBellBtn) {
+    const label = count === 0 ? 'Notifications' : `${count} notification${count === 1 ? '' : 's'}`;
+    notificationBellBtn.setAttribute('aria-label', label);
+  }
+}
+
+function updateNotificationEmptyState() {
+  if (!notificationEmptyStateEl || !notificationCenter) return;
+  const hasNotifications = Boolean(notificationCenter.querySelector('.notification-card'));
+  notificationEmptyStateEl.classList.toggle('hidden', hasNotifications);
 }
 
 function showAnimeFranchiseNotification(seriesName, missingEntries) {
@@ -5323,6 +5394,7 @@ if (auth) {
 
 tmEasterEgg.bindTriggers();
 initUnifiedLibraryControls();
+initNotificationBell();
 renderUnifiedLibrary();
 
 function updateListStats(listType, entries) {
