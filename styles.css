@@ -79,9 +79,15 @@ h1{margin:0 0 .35rem 0;font-size:1.8rem;letter-spacing:.4px}
 @media (min-width:640px){
   .library-header{flex-direction:row;align-items:flex-end;justify-content:space-between}
   .library-header h2{margin:0}
+  .library-header .library-stats-line{justify-content:flex-end;align-self:flex-end}
 }
-.library-stats-line{color:var(--text-300);font-size:.92rem}
-.library-stats-line strong{color:var(--text-100)}
+.library-stats-line{color:var(--text-300);font-size:.92rem;display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;justify-content:flex-start}
+.library-stats-line.has-data{color:var(--text-100)}
+.library-stat-chip{display:inline-flex;flex-direction:column;gap:.05rem;min-width:84px;padding:.35rem .65rem;border-radius:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 20px rgba(3,7,15,0.35);backdrop-filter:blur(4px);font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-300)}
+.library-stat-chip .library-stat-value{font-size:1.05rem;font-weight:700;color:var(--text-100);letter-spacing:normal;text-transform:none}
+.library-stat-chip.runtime{min-width:160px;background:linear-gradient(120deg,rgba(80,201,255,0.16),rgba(125,242,201,0.12));border-color:rgba(125,242,201,0.35)}
+.library-stat-chip.runtime .library-stat-value{color:#e4fbff}
+.library-stat-label{font-size:.68rem;letter-spacing:.14em;color:var(--text-500)}
 .section-content{display:flex;flex-direction:column;gap:1.25rem}
 
 .add-form{

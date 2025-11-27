@@ -140,6 +140,21 @@ function getDisplayCache(listType) {
   const map = getDisplayCacheMap();
   return map[listType];
 }
+
+function formatLibraryStatNumber(value) {
+  const num = Number(value) || 0;
+  return num.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function buildLibraryStatChip(label, value, options = {}) {
+  const { modifier = '' } = options;
+  const chip = createEl('span', modifier ? `library-stat-chip ${modifier}` : 'library-stat-chip');
+  const valueEl = createEl('span', 'library-stat-value', { text: value });
+  const labelEl = createEl('span', 'library-stat-label', { text: label });
+  chip.appendChild(valueEl);
+  chip.appendChild(labelEl);
+  return chip;
+}
 // ============================================================================
 // Feature Map (grouped by responsibilities)
 // 1. Auth & Session Flow
@@ -1779,14 +1794,28 @@ function updateLibraryRuntimeStats() {
   const stats = computeLibraryRuntimeStats();
   if (!stats.hasAnyData) {
     libraryStatsSummaryEl.textContent = 'Totals update once your lists load.';
+    libraryStatsSummaryEl.classList.remove('has-data');
+    libraryStatsSummaryEl.removeAttribute('aria-label');
     return;
   }
-  const movieLabel = `${stats.movieCount} movie${stats.movieCount === 1 ? '' : 's'}`;
-  const episodeLabel = `${stats.episodeCount} episode${stats.episodeCount === 1 ? '' : 's'}`;
-  const runtimeLabel = stats.totalMinutes > 0
+  libraryStatsSummaryEl.classList.add('has-data');
+  libraryStatsSummaryEl.innerHTML = '';
+  const movieLabel = stats.movieCount === 1 ? 'Movie' : 'Movies';
+  const episodeLabel = stats.episodeCount === 1 ? 'Episode' : 'Episodes';
+  const runtimeText = stats.totalMinutes > 0
     ? `${formatRuntimeDurationDetailed(stats.totalMinutes)} to finish`
     : 'Runtime info unavailable';
-  libraryStatsSummaryEl.textContent = `${movieLabel} • ${episodeLabel} • ${runtimeLabel}`;
+
+  const movieChip = buildLibraryStatChip(movieLabel, formatLibraryStatNumber(stats.movieCount));
+  const episodeChip = buildLibraryStatChip(episodeLabel, formatLibraryStatNumber(stats.episodeCount));
+  const runtimeChip = buildLibraryStatChip('Finish Time', runtimeText, { modifier: 'runtime' });
+
+  libraryStatsSummaryEl.appendChild(movieChip);
+  libraryStatsSummaryEl.appendChild(episodeChip);
+  libraryStatsSummaryEl.appendChild(runtimeChip);
+
+  const spokenSummary = `${stats.movieCount} ${movieLabel}, ${stats.episodeCount} ${episodeLabel}, ${runtimeText}`;
+  libraryStatsSummaryEl.setAttribute('aria-label', spokenSummary);
 }
 
 function computeLibraryRuntimeStats() {
