@@ -2311,6 +2311,7 @@ function renderMovieCardContent(card, listType, cardId, item, entryId = cardId) 
   const details = buildMovieCardDetails(listType, cardId, entryId, item);
   card.insertBefore(summary, card.firstChild || null);
   card.appendChild(details);
+  repositionSeriesCarouselNav(card, listType, cardId);
 }
 
 function buildMovieCardSummary(listType, item, context = {}) {
@@ -2349,7 +2350,7 @@ function buildMovieCardInfo(listType, item, context = {}) {
   info.appendChild(header);
 
   if (isCollapsibleList(listType)) {
-    const badges = buildMediaSummaryBadges(listType, item, context);
+    const badges = buildMediaSummaryBadges(listType, item, { ...context, listType });
     if (badges) info.appendChild(badges);
   }
 
@@ -2364,6 +2365,12 @@ function buildMediaSummaryBadges(listType, item, context = {}) {
   const rowClass = isTv ? 'tv-summary-badges' : 'anime-summary-badges';
   const chipClass = isTv ? 'tv-chip' : 'anime-chip';
   const row = createEl('div', rowClass);
+  if (context.cardId) {
+    row.dataset.cardId = context.cardId;
+  }
+  if (context.listType) {
+    row.dataset.listType = context.listType;
+  }
   chips.forEach(text => row.appendChild(createEl('span', chipClass, { text })));
   return row;
 }
@@ -2660,6 +2667,8 @@ function buildTvDetailBlock(listType, entryId, item) {
   const block = createEl('div', 'detail-block tv-detail-block');
   if (hasChips) {
     const row = createEl('div', 'tv-stats-row');
+    row.dataset.cardId = resolvedEntryId;
+    row.dataset.listType = listType;
     chips.forEach(text => row.appendChild(createEl('span', 'tv-chip', { text })));
     block.appendChild(row);
   }
@@ -2826,6 +2835,8 @@ function buildSeriesCarouselBlock(listType, cardId) {
   if (!entries || entries.length <= 1) return null;
   const state = getSeriesCarouselState(listType, cardId, entries.length);
   const block = createEl('div', 'series-carousel detail-block');
+  block.dataset.cardId = cardId;
+  block.dataset.listType = listType;
 
   const nav = createEl('div', 'series-carousel-nav');
   const prevBtn = createEl('button', 'series-carousel-btn', { text: '‹ Prev' });
@@ -2888,6 +2899,7 @@ function cycleSeriesCard(listType, cardId, delta) {
   cards.forEach(card => {
     renderMovieCardContent(card, listType, cardId, entry.item, entry.id);
     card.classList.add('expanded');
+    repositionSeriesCarouselNav(card, listType, cardId);
   });
   const expandedSet = ensureExpandedSet(listType);
   expandedSet.add(cardId);
@@ -2904,6 +2916,21 @@ function resetSeriesCardToFirstEntry(listType, cardId) {
   state.entryId = first.id;
   const cards = document.querySelectorAll(`.card.collapsible.movie-card[data-list-type="${listType}"][data-id="${cardId}"]`);
   cards.forEach(card => renderMovieCardContent(card, listType, cardId, first.item, first.id));
+}
+
+function repositionSeriesCarouselNav(card, listType, cardId) {
+  if (!card || !listType || !cardId) return;
+  const summary = card.querySelector('.movie-card-summary');
+  const carouselBlock = card.querySelector('.series-carousel.detail-block');
+  if (!summary || !carouselBlock) return;
+  const badgeRow = summary.querySelector('[data-card-id]');
+  const target = badgeRow || summary.lastElementChild || summary;
+  const parent = target.parentNode;
+  if (!parent) return;
+  const nextSibling = target.nextSibling;
+  if (nextSibling === carouselBlock) return;
+  parent.insertBefore(carouselBlock, nextSibling);
+  carouselBlock.classList.add('series-carousel-inline');
 }
 
 function buildMovieMetaText(item) {
