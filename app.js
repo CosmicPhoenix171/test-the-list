@@ -236,24 +236,32 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
   };
   
   function updateFrame() {
+    const totalMinutesInBreakdown = 
+      breakdown.years * 525600 +
+      breakdown.months * 43200 +
+      Math.floor((breakdown.days % 28) / 7) * 10080 +
+      (breakdown.days % 7) * 1440 +
+      breakdown.hours * 60 +
+      breakdown.minutes;
+    
     animationState.minutes += increments.minutes;
-    if (animationState.minutes >= maxValues.minutes && breakdown.hours > 0) {
+    if (animationState.minutes >= maxValues.minutes && totalMinutesInBreakdown >= 60) {
       animationState.minutes = 0;
       animationState.hours += increments.hours;
     }
-    if (animationState.hours >= maxValues.hours && breakdown.days > 0) {
+    if (animationState.hours >= maxValues.hours && totalMinutesInBreakdown >= 1440) {
       animationState.hours = 0;
       animationState.days += increments.days;
     }
-    if (animationState.days >= maxValues.days && (breakdown.days >= 7 || breakdown.weeks > 0)) {
+    if (animationState.days >= maxValues.days && totalMinutesInBreakdown >= 10080) {
       animationState.days = 0;
       animationState.weeks += increments.weeks;
     }
-    if (animationState.weeks >= maxValues.weeks && breakdown.months > 0) {
+    if (animationState.weeks >= maxValues.weeks && totalMinutesInBreakdown >= 43200) {
       animationState.weeks = 0;
       animationState.months += increments.months;
     }
-    if (animationState.months >= maxValues.months && breakdown.years > 0) {
+    if (animationState.months >= maxValues.months && totalMinutesInBreakdown >= 525600) {
       animationState.months = 0;
       animationState.years += increments.years;
     }
