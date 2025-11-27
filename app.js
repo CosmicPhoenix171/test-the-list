@@ -216,12 +216,13 @@ function getRuntimeUnitBreakdown(totalMinutes) {
   return { minutes, hours, days, weeks, months, years };
 }
 
-function renderRuntimePillsDisplay(valueMap = createRuntimePillValueMap(), visibilityMap = {}) {
+function renderRuntimePillsDisplay(valueMap = createRuntimePillValueMap(), visibilityMap = {}, activeUnit = null) {
   const pills = [...RUNTIME_PILL_UNITS].reverse().map(({ key, label }) => {
     const isVisible = Boolean(visibilityMap[key]);
+    const isActive = activeUnit === key;
     const valueMarkup = formatRuntimePillNumber(valueMap[key] || 0);
     return `
-      <span class="runtime-pill runtime-pill-${key}${isVisible ? ' is-visible' : ''}">
+      <span class="runtime-pill runtime-pill-${key}${isVisible ? ' is-visible' : ''}${isActive ? ' is-active' : ''}">
         <span class="runtime-pill-value">${valueMarkup}</span>
         <span class="runtime-pill-label">${label}</span>
       </span>
@@ -313,7 +314,7 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
     definitions.forEach(d => chipElement.classList.remove(d.className));
     chipElement.classList.add(stage.className);
 
-    valueEl.innerHTML = renderRuntimePillsDisplay(displayValues, visibilityMap);
+    valueEl.innerHTML = renderRuntimePillsDisplay(displayValues, visibilityMap, stage.unit);
 
     if (progress >= 1) {
       activeStageIndex++;
