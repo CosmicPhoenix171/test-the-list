@@ -128,6 +128,11 @@ const metadataRefreshHistory = new Map();
 const jikanSecondWindow = [];
 const jikanMinuteWindow = [];
 const jikanErrorNoticeTimestamps = new Map();
+const UNIFIED_SYNC_RENDER_LIMIT = 450;
+const UNIFIED_RENDER_MIN_CHUNK = 24;
+const UNIFIED_RENDER_MAX_CHUNK = 96;
+let unifiedRenderTaskHandle = null;
+let unifiedRenderGeneration = 0;
 const unifiedFilters = {
   search: '',
   types: new Set(PRIMARY_LIST_TYPES)
@@ -1371,9 +1376,60 @@ function renderList(listType, data) {
   renderGlobalLibrarySummary();
 }
 
+function cancelPendingUnifiedRender() {
+  if (unifiedRenderTaskHandle) {
+    cancelAnimationFrame(unifiedRenderTaskHandle);
+    unifiedRenderTaskHandle = null;
+  }
+}
+
+function computeUnifiedChunkSize(total) {
+  if (total > 5000) return UNIFIED_RENDER_MIN_CHUNK;
+  if (total > 3500) return Math.floor(UNIFIED_RENDER_MIN_CHUNK * 1.5);
+  if (total > 2000) return Math.floor((UNIFIED_RENDER_MIN_CHUNK + UNIFIED_RENDER_MAX_CHUNK) / 2);
+  if (total > 1200) return Math.floor(UNIFIED_RENDER_MAX_CHUNK * 0.85);
+  return UNIFIED_RENDER_MAX_CHUNK;
+}
+
+function progressiveRenderUnifiedCards(cards, grid, progressEl, generation) {
+  const total = cards.length;
+  const chunkSize = computeUnifiedChunkSize(total);
+  let index = 0;
+
+  const appendChunk = () => {
+    if (generation !== unifiedRenderGeneration) {
+      unifiedRenderTaskHandle = null;
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    let count = 0;
+    while (index < total && count < chunkSize) {
+      fragment.appendChild(cards[index++].node);
+      count++;
+    }
+    grid.appendChild(fragment);
+    if (progressEl) {
+      const percent = Math.min(100, Math.round((index / total) * 100));
+      progressEl.textContent = `Rendering ${total} entries… ${percent}%`;
+    }
+    if (index >= total) {
+      if (progressEl && progressEl.parentNode) {
+        progressEl.parentNode.removeChild(progressEl);
+      }
+      unifiedRenderTaskHandle = null;
+      return;
+    }
+    unifiedRenderTaskHandle = requestAnimationFrame(appendChunk);
+  };
+
+  appendChunk();
+}
+
 function renderUnifiedLibrary() {
   const container = document.getElementById('combined-list');
   if (!container) return;
+  cancelPendingUnifiedRender();
+  unifiedRenderGeneration += 1;
   container.innerHTML = '';
 
   const cards = collectUnifiedCards();
@@ -1386,8 +1442,20 @@ function renderUnifiedLibrary() {
 
   const combinedGrid = document.createElement('div');
   combinedGrid.className = 'movies-grid unified-grid';
-  cards.forEach(({ node }) => combinedGrid.appendChild(node));
   container.appendChild(combinedGrid);
+
+  if (cards.length <= UNIFIED_SYNC_RENDER_LIMIT) {
+    const fragment = document.createDocumentFragment();
+    cards.forEach(({ node }) => fragment.appendChild(node));
+    combinedGrid.appendChild(fragment);
+    return;
+  }
+
+  const progressEl = createEl('div', 'small unified-render-progress', {
+    text: `Rendering ${cards.length} entries…`,
+  });
+  container.insertBefore(progressEl, combinedGrid);
+  progressiveRenderUnifiedCards(cards, combinedGrid, progressEl, unifiedRenderGeneration);
 }
 
 function collectUnifiedCards() {
@@ -1407,12 +1475,9 @@ function collectUnifiedCards() {
 
     const tempSection = document.createElement('section');
     tempSection.className = 'library-section unified-temp';
-    tempSection.style.display = 'none';
-    if (document.body) {
-      document.body.appendChild(tempSection);
-    }
+    tempSection.hidden = true;
     if (isCollapsibleList(listType)) {
-      renderCollapsibleMediaGrid(listType, tempSection, entries);
+      renderCollapsibleMediaGrid(listType, tempSection, entries, { skipStateSync: true });
     } else {
       const grid = document.createElement('div');
       grid.className = 'movies-grid';
@@ -1429,9 +1494,6 @@ function collectUnifiedCards() {
       const sortKey = title.toLowerCase();
       cards.push({ node: card, sortKey: sortKey || title, listType });
     });
-    if (tempSection.parentNode) {
-      tempSection.parentNode.removeChild(tempSection);
-    }
   });
   return cards;
 }
@@ -1664,6 +1726,7 @@ function prepareCollapsibleRecords(listType, entries) {
 
 function renderCollapsibleMediaGrid(listType, container, entries, options = {}) {
   const inline = Boolean(options.inline);
+  const skipStateSync = Boolean(options.skipStateSync);
   const grid = inline ? container : createEl('div', 'movies-grid');
   const { displayRecords, leaderMembersByCardId, visibleIds } = prepareCollapsibleRecords(listType, entries);
   seriesGroups[listType] = leaderMembersByCardId;
@@ -1694,7 +1757,9 @@ function renderCollapsibleMediaGrid(listType, container, entries, options = {}) 
     }
   });
 
-  updateCollapsibleCardStates(listType);
+  if (!skipStateSync) {
+    updateCollapsibleCardStates(listType);
+  }
 }
 
 function renderStandardList(container, listType, entries) {
