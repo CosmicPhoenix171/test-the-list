@@ -1395,6 +1395,13 @@ function buildUnifiedCardNode(record) {
   return buildStandardCard(record.listType, record.cardId, record.item);
 }
 
+function syncPlaceholderExpandedState(card) {
+  if (!card) return;
+  const placeholder = card.closest('.unified-card-placeholder');
+  if (!placeholder) return;
+  placeholder.classList.toggle('expanded-host', card.classList.contains('expanded'));
+}
+
 function createUnifiedCardPlaceholder(index) {
   const placeholder = document.createElement('div');
   placeholder.className = 'unified-card-placeholder';
@@ -1414,7 +1421,13 @@ function ensureUnifiedPlaceholderRendered(placeholder) {
   placeholder.appendChild(node);
   placeholder.dataset.rendered = '1';
   placeholder.style.minHeight = '';
+  placeholder.classList.add('rendered');
+  placeholder.textContent = '';
   unifiedRenderedPlaceholderMap.set(placeholder, node);
+  const cardNode = placeholder.querySelector('.card');
+  if (cardNode) {
+    syncPlaceholderExpandedState(cardNode);
+  }
 }
 
 function releaseUnifiedPlaceholder(placeholder) {
@@ -1426,6 +1439,7 @@ function releaseUnifiedPlaceholder(placeholder) {
   placeholder.dataset.rendered = '0';
   placeholder.style.minHeight = `${UNIFIED_PLACEHOLDER_MIN_HEIGHT}px`;
   placeholder.textContent = 'Loading entry…';
+  placeholder.classList.remove('rendered', 'expanded-host');
   unifiedRenderedPlaceholderMap.delete(placeholder);
 }
 
@@ -2490,6 +2504,7 @@ function updateCollapsibleCardStates(listType) {
       ? expandedSet.has(card.dataset.id)
       : expandedSet === card.dataset.id;
     card.classList.toggle('expanded', isMatch);
+    syncPlaceholderExpandedState(card);
   });
 }
 
