@@ -52,7 +52,8 @@ h1{margin:0 0 .35rem 0;font-size:1.8rem;letter-spacing:.4px}
 .intro-tm{font-size:clamp(.7rem,1.4vw,1.1rem);letter-spacing:.4rem;color:#7df2c9;opacity:0;animation:introTmReveal 1.8s ease 1.2s forwards}
 .subtitle{color:var(--text-500);margin:0 0 1.1rem}
 .small{color:var(--text-500);font-size:.85rem}
-.unified-render-progress{margin:.35rem 0 -.15rem;color:var(--text-500);font-size:.85rem}
+.unified-card-placeholder{min-height:260px;border-radius:14px;border:1px solid rgba(255,255,255,0.04);background:linear-gradient(180deg,rgba(20,28,36,0.4),rgba(12,18,26,0.2));box-shadow:0 4px 12px rgba(0,0,0,0.18);display:flex;align-items:center;justify-content:center;color:var(--text-500);font-size:.82rem;animation:pulsePlaceholder 1.4s ease infinite}
+@keyframes pulsePlaceholder{0%{opacity:.45}50%{opacity:.75}100%{opacity:.45}}
 .btn{cursor:pointer;border:0;padding:.6rem .95rem;border-radius:10px;font-weight:600;transition:transform .12s ease,box-shadow .25s ease,filter .25s ease}
 .btn.primary{background:linear-gradient(135deg,var(--primary-300),#4bd2ff);color:#061119;box-shadow:0 8px 22px rgba(75,210,255,0.25)}
 .btn.secondary{background:linear-gradient(135deg,#7e8ea1,#b6c7da);color:#061119}

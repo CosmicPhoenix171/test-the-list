@@ -128,11 +128,11 @@ const metadataRefreshHistory = new Map();
 const jikanSecondWindow = [];
 const jikanMinuteWindow = [];
 const jikanErrorNoticeTimestamps = new Map();
-const UNIFIED_SYNC_RENDER_LIMIT = 450;
-const UNIFIED_RENDER_MIN_CHUNK = 24;
-const UNIFIED_RENDER_MAX_CHUNK = 96;
-let unifiedRenderTaskHandle = null;
-let unifiedRenderGeneration = 0;
+const UNIFIED_PLACEHOLDER_MIN_HEIGHT = 260;
+const UNIFIED_VIEWPORT_BUFFER_PX = 800;
+let unifiedVirtualObserver = null;
+let unifiedVirtualRecords = [];
+let unifiedRenderedPlaceholderMap = new WeakMap();
 const unifiedFilters = {
   search: '',
   types: new Set(PRIMARY_LIST_TYPES)
@@ -1376,90 +1376,105 @@ function renderList(listType, data) {
   renderGlobalLibrarySummary();
 }
 
-function cancelPendingUnifiedRender() {
-  if (unifiedRenderTaskHandle) {
-    cancelAnimationFrame(unifiedRenderTaskHandle);
-    unifiedRenderTaskHandle = null;
+function teardownUnifiedVirtualizer() {
+  if (unifiedVirtualObserver) {
+    unifiedVirtualObserver.disconnect();
+    unifiedVirtualObserver = null;
   }
+  unifiedVirtualRecords = [];
+  unifiedRenderedPlaceholderMap = new WeakMap();
 }
 
-function computeUnifiedChunkSize(total) {
-  if (total > 5000) return UNIFIED_RENDER_MIN_CHUNK;
-  if (total > 3500) return Math.floor(UNIFIED_RENDER_MIN_CHUNK * 1.5);
-  if (total > 2000) return Math.floor((UNIFIED_RENDER_MIN_CHUNK + UNIFIED_RENDER_MAX_CHUNK) / 2);
-  if (total > 1200) return Math.floor(UNIFIED_RENDER_MAX_CHUNK * 0.85);
-  return UNIFIED_RENDER_MAX_CHUNK;
+function buildUnifiedCardNode(record) {
+  if (!record) return document.createDocumentFragment();
+  if (record.isCollapsible) {
+    return buildCollapsibleMovieCard(record.listType, record.cardId, record.item, record.positionIndex, {
+      displayEntryId: record.entryId,
+    });
+  }
+  return buildStandardCard(record.listType, record.cardId, record.item);
 }
 
-function progressiveRenderUnifiedCards(cards, grid, progressEl, generation) {
-  const total = cards.length;
-  const chunkSize = computeUnifiedChunkSize(total);
-  let index = 0;
+function createUnifiedCardPlaceholder(index) {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'unified-card-placeholder';
+  placeholder.dataset.index = String(index);
+  placeholder.style.minHeight = `${UNIFIED_PLACEHOLDER_MIN_HEIGHT}px`;
+  placeholder.textContent = 'Loading entry…';
+  return placeholder;
+}
 
-  const appendChunk = () => {
-    if (generation !== unifiedRenderGeneration) {
-      unifiedRenderTaskHandle = null;
-      return;
-    }
-    const fragment = document.createDocumentFragment();
-    let count = 0;
-    while (index < total && count < chunkSize) {
-      fragment.appendChild(cards[index++].node);
-      count++;
-    }
-    grid.appendChild(fragment);
-    if (progressEl) {
-      const percent = Math.min(100, Math.round((index / total) * 100));
-      progressEl.textContent = `Rendering ${total} entries… ${percent}%`;
-    }
-    if (index >= total) {
-      if (progressEl && progressEl.parentNode) {
-        progressEl.parentNode.removeChild(progressEl);
+function ensureUnifiedPlaceholderRendered(placeholder) {
+  if (!placeholder || placeholder.dataset.rendered === '1') return;
+  const index = Number(placeholder.dataset.index);
+  const record = unifiedVirtualRecords[index];
+  if (!record) return;
+  const node = buildUnifiedCardNode(record);
+  placeholder.innerHTML = '';
+  placeholder.appendChild(node);
+  placeholder.dataset.rendered = '1';
+  placeholder.style.minHeight = '';
+  unifiedRenderedPlaceholderMap.set(placeholder, node);
+}
+
+function releaseUnifiedPlaceholder(placeholder) {
+  if (!placeholder || placeholder.dataset.rendered !== '1') return;
+  const node = unifiedRenderedPlaceholderMap.get(placeholder);
+  if (node && node.parentNode === placeholder) {
+    placeholder.removeChild(node);
+  }
+  placeholder.dataset.rendered = '0';
+  placeholder.style.minHeight = `${UNIFIED_PLACEHOLDER_MIN_HEIGHT}px`;
+  placeholder.textContent = 'Loading entry…';
+  unifiedRenderedPlaceholderMap.delete(placeholder);
+}
+
+function setupUnifiedVirtualizer(records, grid) {
+  teardownUnifiedVirtualizer();
+  unifiedVirtualRecords = records;
+  unifiedVirtualObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        ensureUnifiedPlaceholderRendered(entry.target);
+      } else {
+        releaseUnifiedPlaceholder(entry.target);
       }
-      unifiedRenderTaskHandle = null;
-      return;
-    }
-    unifiedRenderTaskHandle = requestAnimationFrame(appendChunk);
-  };
+    });
+  }, {
+    root: null,
+    rootMargin: `${UNIFIED_VIEWPORT_BUFFER_PX}px 0px`,
+    threshold: 0.01,
+  });
 
-  appendChunk();
+  records.forEach((_, index) => {
+    const placeholder = createUnifiedCardPlaceholder(index);
+    grid.appendChild(placeholder);
+    unifiedVirtualObserver.observe(placeholder);
+  });
 }
 
 function renderUnifiedLibrary() {
   const container = document.getElementById('combined-list');
   if (!container) return;
-  cancelPendingUnifiedRender();
-  unifiedRenderGeneration += 1;
+  teardownUnifiedVirtualizer();
   container.innerHTML = '';
 
-  const cards = collectUnifiedCards();
-  if (!cards.length) {
+  const records = collectUnifiedRecords();
+  if (!records.length) {
     container.innerHTML = '<div class="empty-state">No items found.</div>';
     return;
   }
 
-  cards.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  records.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
   const combinedGrid = document.createElement('div');
   combinedGrid.className = 'movies-grid unified-grid';
   container.appendChild(combinedGrid);
-
-  if (cards.length <= UNIFIED_SYNC_RENDER_LIMIT) {
-    const fragment = document.createDocumentFragment();
-    cards.forEach(({ node }) => fragment.appendChild(node));
-    combinedGrid.appendChild(fragment);
-    return;
-  }
-
-  const progressEl = createEl('div', 'small unified-render-progress', {
-    text: `Rendering ${cards.length} entries…`,
-  });
-  container.insertBefore(progressEl, combinedGrid);
-  progressiveRenderUnifiedCards(cards, combinedGrid, progressEl, unifiedRenderGeneration);
+  setupUnifiedVirtualizer(records, combinedGrid);
 }
 
-function collectUnifiedCards() {
-  const cards = [];
+function collectUnifiedRecords() {
+  const records = [];
   PRIMARY_LIST_TYPES.forEach(listType => {
     const data = listCaches[listType] || {};
     const entries = Object.entries(data).filter(([_, item]) => {
@@ -1473,38 +1488,45 @@ function collectUnifiedCards() {
     if (!entries.length) return;
     entries.sort((a, b) => (a[1].title || '').localeCompare(b[1].title || ''));
 
-    const tempSection = document.createElement('section');
-    tempSection.className = 'library-section unified-temp';
-    tempSection.hidden = true;
     if (isCollapsibleList(listType)) {
-      renderCollapsibleMediaGrid(listType, tempSection, entries, { skipStateSync: true });
-    } else {
-      const grid = document.createElement('div');
-      grid.className = 'movies-grid';
-      renderStandardList(grid, listType, entries);
-      tempSection.appendChild(grid);
+      const { displayRecords, leaderMembersByCardId } = prepareCollapsibleRecords(listType, entries);
+      seriesGroups[listType] = leaderMembersByCardId;
+      const typeKeywords = buildListTypeKeywordSet(listType);
+      displayRecords.forEach(record => {
+        if (!cardMatchesBadgeFilters(listType, typeKeywords)) return;
+        const displayItem = record.displayItem || record.item;
+        if (!displayItem) return;
+        const sortKey = (displayItem.title || '').toLowerCase();
+        records.push({
+          listType,
+          cardId: record.id,
+          entryId: record.displayEntryId,
+          item: displayItem,
+          positionIndex: record.index,
+          sortKey,
+          isCollapsible: true,
+        });
+      });
+      return;
     }
 
-    const cardNodes = Array.from(tempSection.querySelectorAll('.card'));
-    cardNodes.forEach(card => {
-      const badgeKeywords = annotateCardBadgeKeywords(card, listType);
-      if (!cardMatchesBadgeFilters(listType, badgeKeywords)) return;
-      const titleEl = card.querySelector('.title');
-      const title = (titleEl ? titleEl.textContent : card.dataset.title || '').trim();
-      const sortKey = title.toLowerCase();
-      cards.push({ node: card, sortKey: sortKey || title, listType });
+    const typeKeywords = buildListTypeKeywordSet(listType);
+    entries.forEach(([id, item], index) => {
+      if (!item) return;
+      if (!cardMatchesBadgeFilters(listType, typeKeywords)) return;
+      const sortKey = (item.title || '').toLowerCase();
+      records.push({
+        listType,
+        cardId: id,
+        entryId: id,
+        item,
+        positionIndex: index,
+        sortKey,
+        isCollapsible: false,
+      });
     });
   });
-  return cards;
-}
-
-function annotateCardBadgeKeywords(card, listType) {
-  const keywords = new Set();
-  const chipNodes = card.querySelectorAll('.anime-summary-badges .anime-chip, .watch-time-chip');
-  chipNodes.forEach(chip => collectBadgeKeywordsFromText(chip?.textContent || '', keywords));
-  collectFallbackKeywordsForList(listType, keywords);
-  card.dataset.badgeKeywords = Array.from(keywords).join(',');
-  return keywords;
+  return records;
 }
 
 function collectFallbackKeywordsForList(listType, bucket) {
@@ -1523,24 +1545,21 @@ function collectFallbackKeywordsForList(listType, bucket) {
       bucket.add('book');
       break;
     default:
-      break;
-  }
-}
+      }
 
-function collectBadgeKeywordsFromText(text, bucket) {
-  const normalized = String(text || '').trim().toLowerCase();
-  if (!normalized) return;
-  if (/\bmovie(s)?\b/.test(normalized)) bucket.add('movie');
-  if (/\btv\b/.test(normalized) || /\bseries\b/.test(normalized) || /\bshow\b/.test(normalized)) bucket.add('tv');
-  if (/\banime\b/.test(normalized)) bucket.add('anime');
-  if (/\bbook(s)?\b/.test(normalized) || /\bread\b/.test(normalized)) bucket.add('book');
-  if (/\bova\b/.test(normalized) || /\bona\b/.test(normalized) || /\bspecial\b/.test(normalized) || /\bmusic\b/.test(normalized)) bucket.add('anime');
-}
+      function buildListTypeKeywordSet(listType) {
+        const keywords = new Set();
+        collectFallbackKeywordsForList(listType, keywords);
+        return keywords;
+      }
+
+      function cardMatchesBadgeFilters(listType, badgeKeywords) {
 
 function cardMatchesBadgeFilters(listType, badgeKeywords) {
   const activeFilters = unifiedFilters.types;
   if (!activeFilters || !activeFilters.size || activeFilters.size === PRIMARY_LIST_TYPES.length) {
-    return true;
+        const keywords = badgeKeywords || buildListTypeKeywordSet(listType);
+        const hasKeyword = (token) => keywords && keywords.has(token);
   }
   const hasKeyword = (token) => badgeKeywords && badgeKeywords.has(token);
   return Array.from(activeFilters).some(type => {
