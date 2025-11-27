@@ -2134,6 +2134,7 @@ function cycleSeriesCard(listType, cardId, delta) {
   const entries = getSeriesGroupEntries(listType, cardId);
   if (!entries || entries.length <= 1) return;
   const state = getSeriesCarouselState(listType, cardId, entries.length);
+  state.followLatest = false;
   const total = entries.length;
   state.index = (state.index + delta + total) % total;
   const entry = entries[state.index];
@@ -2153,13 +2154,14 @@ function cycleSeriesCard(listType, cardId, delta) {
 function resetSeriesCardToFirstEntry(listType, cardId) {
   const entries = getSeriesGroupEntries(listType, cardId);
   if (!entries || !entries.length) return;
-  const first = entries[0];
-  if (!first || !first.item) return;
+  const latest = pickLatestSeriesEntry(entries) || entries[0];
+  if (!latest || !latest.item) return;
   const state = getSeriesCarouselState(listType, cardId, entries.length);
-  state.index = 0;
-  state.entryId = first.id;
+  state.index = entries.indexOf(latest);
+  state.entryId = latest.id;
+  state.followLatest = true;
   const cards = document.querySelectorAll(`.card.collapsible.movie-card[data-list-type="${listType}"][data-id="${cardId}"]`);
-  cards.forEach(card => renderMovieCardContent(card, listType, cardId, first.item, first.id));
+  cards.forEach(card => renderMovieCardContent(card, listType, cardId, latest.item, latest.id));
 }
 
 function buildMovieMetaText(item) {
@@ -2429,7 +2431,7 @@ function getSeriesCarouselState(listType, cardId, entryCount = 0) {
   const store = ensureSeriesCarouselStore(listType);
   let state = store.get(cardId);
   if (!state) {
-    state = { index: 0 };
+    state = { index: 0, followLatest: true };
     store.set(cardId, state);
   }
   if (entryCount && state.index >= entryCount) {
@@ -2456,24 +2458,40 @@ function sortSeriesRecords(records) {
   });
 }
 
+function pickLatestSeriesEntry(entries) {
+  if (!entries || !entries.length) return null;
+  return entries[entries.length - 1] || null;
+}
+
 function resolveSeriesDisplayEntry(listType, leaderId, entries) {
   if (!entries || !entries.length) return null;
   const state = getSeriesCarouselState(listType, leaderId, entries.length);
+  const shouldFollowLatest = state.followLatest !== false;
+  if (shouldFollowLatest) {
+    const latest = pickLatestSeriesEntry(entries);
+    if (latest) {
+      state.index = entries.indexOf(latest);
+      state.entryId = latest.id;
+      state.followLatest = true;
+      return latest;
+    }
+  }
+
   let idx = typeof state.index === 'number' ? state.index : 0;
   if (idx >= entries.length || idx < 0) idx = 0;
   if (state.entryId) {
     const matchIdx = entries.findIndex(entry => entry.id === state.entryId);
     if (matchIdx >= 0) idx = matchIdx;
   }
-  const entry = entries[idx] || entries[0];
+  const entry = entries[idx] || pickLatestSeriesEntry(entries) || entries[0];
   if (entry) {
     state.index = entries.indexOf(entry);
     state.entryId = entry.id;
     return entry;
   }
   state.index = 0;
-  state.entryId = entries[0].id;
-  return entries[0];
+  state.entryId = entries[0]?.id;
+  return entries[0] || null;
 }
 
 function pickSeriesLeader(entries) {
