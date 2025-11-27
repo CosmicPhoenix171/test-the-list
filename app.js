@@ -119,6 +119,7 @@ let persistedNotifications = [];
 let notificationSignatureCache = new Set();
 const finishedListeners = {};
 let showFinishedOnly = false;
+let libraryFullyLoaded = false;
 const unifiedFilters = {
   search: '',
   types: new Set(PRIMARY_LIST_TYPES),
@@ -1481,10 +1482,15 @@ function showAppForUser(user) {
 }
 
 function loadPrimaryLists() {
+  libraryFullyLoaded = false;
   const order = [...PRIMARY_LIST_TYPES];
   let index = 0;
   const loadNext = () => {
-    if (index >= order.length) return;
+    if (index >= order.length) {
+      libraryFullyLoaded = true;
+      renderUnifiedLibrary();
+      return;
+    }
     const listType = order[index++];
     loadList(listType);
     loadFinishedList(listType);
@@ -1885,7 +1891,16 @@ function updateLibraryRuntimeStats() {
   libraryStatsSummaryEl.appendChild(runtimeChip);
 
   if (stats.totalMinutes > 0) {
-    animateRuntimeProgression(runtimeChip, stats.totalMinutes);
+    if (libraryFullyLoaded) {
+      animateRuntimeProgression(runtimeChip, stats.totalMinutes);
+    } else {
+      const valueEl = runtimeChip.querySelector('.library-stat-value');
+      if (valueEl) {
+        valueEl.textContent = formatRuntimeDurationDetailed(stats.totalMinutes) + ' to finish';
+      }
+      const thresholdClass = getRuntimeThresholdClass(stats.totalMinutes);
+      runtimeChip.classList.add(thresholdClass);
+    }
   } else {
     const valueEl = runtimeChip.querySelector('.library-stat-value');
     if (valueEl) valueEl.textContent = 'Runtime info unavailable';
