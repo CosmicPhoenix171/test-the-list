@@ -2105,6 +2105,10 @@ function buildMovieCardInfo(listType, item, context = {}) {
   const header = createEl('div', 'movie-card-header');
   const title = createEl('div', 'title', { text: item.title || '(no title)' });
   header.appendChild(title);
+  const ratingBadge = buildFinishedRatingBadge(item);
+  if (ratingBadge) {
+    header.appendChild(ratingBadge);
+  }
   info.appendChild(header);
 
   if (isCollapsibleList(listType)) {
@@ -2640,6 +2644,30 @@ function buildMovieCardActions(listType, id, item) {
   return actions;
 }
 
+function getFinishedRatingData(item) {
+  if (!item) return null;
+  const rating = normalizeFinishRating(item.finishedRating);
+  if (rating === null) {
+    return null;
+  }
+  const scaleValue = Number(item.finishedRatingScale);
+  const scale = Number.isFinite(scaleValue) && scaleValue > 0 ? scaleValue : FINISH_RATING_MAX;
+  return { rating, scale };
+}
+
+function buildFinishedRatingBadge(item) {
+  const data = getFinishedRatingData(item);
+  if (!data) return null;
+  const badge = createEl('span', 'rating-badge');
+  badge.setAttribute('title', `Finished rating: ${data.rating}/${data.scale}`);
+  badge.setAttribute('aria-label', `Finished rating ${data.rating} out of ${data.scale}`);
+  const icon = createEl('span', 'rating-badge-icon', { text: '★' });
+  const value = createEl('span', 'rating-badge-value', { text: `${data.rating}/${data.scale}` });
+  badge.appendChild(icon);
+  badge.appendChild(value);
+  return badge;
+}
+
 function buildStandardCard(listType, id, item) {
   const card = createEl('div', 'card');
   card.dataset.listType = listType;
@@ -2689,6 +2717,10 @@ function buildStandardCard(listType, id, item) {
 function buildStandardCardHeader(item) {
   const header = createEl('div', 'card-header');
   header.appendChild(createEl('div', 'title', { text: item.title || '(no title)' }));
+  const ratingBadge = buildFinishedRatingBadge(item);
+  if (ratingBadge) {
+    header.appendChild(ratingBadge);
+  }
   return header;
 }
 
