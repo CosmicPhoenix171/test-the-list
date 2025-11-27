@@ -1376,6 +1376,9 @@ function detachAllListeners() {
 
 function renderList(listType, data) {
   listCaches[listType] = data || {};
+  try {
+    console.debug('[Unified] cache updated', listType, Object.keys(listCaches[listType]).length);
+  } catch (_) {}
   renderUnifiedLibrary();
   renderGlobalLibrarySummary();
 }
@@ -1540,6 +1543,9 @@ function renderUnifiedLibrary() {
   container.innerHTML = '';
 
   const records = collectUnifiedRecords();
+  try {
+    console.debug('[Unified] render pass', { records: records.length });
+  } catch (_) {}
   if (!records.length) {
     container.innerHTML = '<div class="empty-state">No items found.</div>';
     return;
@@ -1557,6 +1563,10 @@ function collectUnifiedRecords() {
   const records = [];
   PRIMARY_LIST_TYPES.forEach(listType => {
     const data = listCaches[listType] || {};
+    const totalEntries = Object.keys(data).length;
+    try {
+      console.debug('[Unified] evaluating type', listType, { totalEntries });
+    } catch (_) {}
     const entries = Object.entries(data).filter(([_, item]) => {
       if (!item) return false;
       if (unifiedFilters.search) {
@@ -1606,6 +1616,9 @@ function collectUnifiedRecords() {
       });
     });
   });
+  try {
+    console.debug('[Unified] collected records', records.length);
+  } catch (_) {}
   return records;
 }
 
