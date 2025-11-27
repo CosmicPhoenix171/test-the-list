@@ -129,6 +129,8 @@ const MEDIA_TYPE_LABELS = {
   anime: 'Anime',
   books: 'Books',
 };
+const FINISH_RATING_MIN = 1;
+const FINISH_RATING_MAX = 10;
 
 function getDisplayCacheMap() {
   return showFinishedOnly ? finishedCaches : listCaches;
@@ -2612,7 +2614,7 @@ function buildMovieCardActions(listType, id, item) {
     {
       className: 'btn success',
       label: 'Finished',
-      handler: () => finishItem(listType, id)
+      handler: () => handleFinishRequest(listType, id)
     },
     ...(SERIES_BULK_DELETE_LISTS.has(listType) && item?.seriesName ? [{
       className: 'btn danger',
@@ -2738,9 +2740,9 @@ function buildStandardCardActions(listType, id, item) {
   actions.appendChild(editBtn);
 
   const finishBtn = createEl('button', 'btn success', { text: 'Finished' });
-  finishBtn.addEventListener('click', (ev) => {
+  finishBtn.addEventListener('click', async (ev) => {
     ev.stopPropagation();
-    finishItem(listType, id);
+    await handleFinishRequest(listType, id);
   });
   actions.appendChild(finishBtn);
 
@@ -4748,7 +4750,138 @@ async function moveItemBetweenLists(sourceListType, targetListType, itemId, item
   await remove(sourceRef);
 }
 
-async function finishItem(listType, itemId) {
+function normalizeFinishRating(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return null;
+  }
+  const rounded = Math.round(num);
+  if (rounded < FINISH_RATING_MIN || rounded > FINISH_RATING_MAX) {
+    return null;
+  }
+  return rounded;
+}
+
+function promptFinishRatingFallback(item) {
+  const input = prompt(`Rate "${item.title || 'this entry'}" from ${FINISH_RATING_MIN}-${FINISH_RATING_MAX} stars before finishing:`);
+  if (input === null) {
+    return null;
+  }
+  const normalized = normalizeFinishRating(input);
+  if (normalized === null) {
+    alert(`Please enter a number between ${FINISH_RATING_MIN} and ${FINISH_RATING_MAX}.`);
+    return null;
+  }
+  return normalized;
+}
+
+function promptFinishRating(item) {
+  if (!modalRoot) {
+    return Promise.resolve(promptFinishRatingFallback(item));
+  }
+  closeAddModal();
+  closeWheelModal();
+
+  return new Promise(resolve => {
+    let selectedRating = null;
+    let resolved = false;
+
+    const backdrop = createEl('div', 'modal-backdrop finish-rating-backdrop');
+    const modal = createEl('div', 'modal finish-rating-modal');
+    const heading = createEl('h3', 'finish-rating-heading', { text: `Rate ${item.title || 'this entry'}` });
+    const subtitle = createEl('p', 'finish-rating-subtitle', { text: 'Pick how many stars it earned before filing it in Finished.' });
+    const options = createEl('div', 'finish-rating-options');
+    const optionButtons = [];
+
+    const preview = createEl('div', 'finish-rating-preview', { text: 'Select a rating to continue.' });
+    const actions = createEl('div', 'finish-rating-actions');
+    const cancelBtn = createEl('button', 'btn ghost', { text: 'Cancel' });
+    const confirmBtn = createEl('button', 'btn success', { text: 'Finish' });
+    confirmBtn.disabled = true;
+
+    function selectRating(value) {
+      selectedRating = value;
+      preview.textContent = `Rated ${value} star${value === 1 ? '' : 's'}`;
+      confirmBtn.disabled = false;
+      optionButtons.forEach(btn => {
+        btn.classList.toggle('is-selected', Number(btn.dataset.rating) === selectedRating);
+      });
+    }
+
+    function cleanup(result) {
+      if (resolved) return;
+      resolved = true;
+      document.removeEventListener('keydown', handleKeyDown);
+      backdrop.removeEventListener('click', handleBackdropClick);
+      if (modalRoot) {
+        modalRoot.innerHTML = '';
+      }
+      resolve(result);
+    }
+
+    function handleKeyDown(ev) {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        cleanup(null);
+      } else if (ev.key === 'Enter' && selectedRating !== null && !confirmBtn.disabled) {
+        ev.preventDefault();
+        cleanup(selectedRating);
+      }
+    }
+
+    function handleBackdropClick(ev) {
+      if (ev.target === backdrop) {
+        cleanup(null);
+      }
+    }
+
+    for (let rating = FINISH_RATING_MIN; rating <= FINISH_RATING_MAX; rating++) {
+      const btn = createEl('button', 'finish-rating-option');
+      btn.dataset.rating = String(rating);
+      const valueEl = createEl('span', 'finish-rating-value', { text: rating });
+      const starEl = createEl('span', 'finish-rating-star', { text: '★' });
+      btn.appendChild(valueEl);
+      btn.appendChild(starEl);
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        selectRating(rating);
+      });
+      optionButtons.push(btn);
+      options.appendChild(btn);
+    }
+
+    cancelBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      cleanup(null);
+    });
+    confirmBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      if (selectedRating !== null) {
+        cleanup(selectedRating);
+      }
+    });
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+
+    modal.appendChild(heading);
+    modal.appendChild(subtitle);
+    modal.appendChild(options);
+    modal.appendChild(preview);
+    modal.appendChild(actions);
+    backdrop.appendChild(modal);
+    modalRoot.innerHTML = '';
+    modalRoot.appendChild(backdrop);
+
+    document.addEventListener('keydown', handleKeyDown);
+    backdrop.addEventListener('click', handleBackdropClick);
+  });
+}
+
+async function handleFinishRequest(listType, itemId) {
   if (!currentUser) {
     alert('Not signed in');
     return;
@@ -4759,23 +4892,44 @@ async function finishItem(listType, itemId) {
     alert('Unable to find this entry. Refresh and try again.');
     return;
   }
-  const confirmed = confirm('Mark this item as finished? It will be removed from your main list but kept in your Finished library.');
-  if (!confirmed) return;
+  const rating = await promptFinishRating(item);
+  if (rating === null) {
+    return;
+  }
+  await finishItem(listType, itemId, rating);
+}
 
+async function finishItem(listType, itemId, ratingValue) {
+  if (!currentUser) {
+    alert('Not signed in');
+    return;
+  }
+  const cache = listCaches[listType] || {};
+  const item = cache[itemId];
+  if (!item) {
+    alert('Unable to find this entry. Refresh and try again.');
+    return;
+  }
   const payload = { ...item };
   delete payload.__id;
   delete payload.__type;
   delete payload.__source;
   payload.finishedAt = Date.now();
+  const normalizedRating = normalizeFinishRating(ratingValue);
+  if (normalizedRating !== null) {
+    payload.finishedRating = normalizedRating;
+    payload.finishedRatingScale = FINISH_RATING_MAX;
+  }
 
   const finishedRef = ref(db, `users/${currentUser.uid}/finished/${listType}/${itemId}`);
   const sourceRef = ref(db, `users/${currentUser.uid}/${listType}/${itemId}`);
   try {
     await set(finishedRef, payload);
     await remove(sourceRef);
+    const ratingSuffix = normalizedRating !== null ? ` (${normalizedRating}/10)` : '';
     pushNotification({
       title: 'Moved to Finished',
-      message: `${item.title || 'Entry'} now lives in your Finished list.`
+      message: `${item.title || 'Entry'} now lives in your Finished list${ratingSuffix}.`
     });
   } catch (err) {
     console.error('finishItem failed', err);
