@@ -3509,7 +3509,10 @@ function formatRuntimeDurationDetailed(totalMinutes) {
 function formatDurationUnit(value, unitLabel) {
   const amount = Math.floor(value);
   if (!amount) return '';
-  return `${amount} ${unitLabel}${amount === 1 ? '' : 's'}`;
+  const formattedAmount = amount < 10 
+    ? `<span style="opacity: 0;">0</span>${amount}` 
+    : `${amount}`;
+  return `${formattedAmount} ${unitLabel}${amount === 1 ? '' : 's'}`;
 }
 
 function breakdownDurationMinutes(totalMinutes) {
