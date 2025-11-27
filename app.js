@@ -2290,11 +2290,7 @@ function buildMovieMetaText(item) {
 function buildMovieExtendedMeta(item) {
   const parts = [];
   if (item.originalLanguage) {
-    let label = `Original Language: ${item.originalLanguage}`;
-    if (!itemIsOriginallyEnglish(item)) {
-      label += ` (Dub: ${hasEnglishDubFlag(item) ? 'Yes' : 'No'})`;
-    }
-    parts.push(label);
+    parts.push(`Original Language: ${item.originalLanguage}`);
   }
   if (item.budget) parts.push(`Budget: ${item.budget}`);
   if (item.revenue) parts.push(`Revenue: ${item.revenue}`);
@@ -3109,15 +3105,6 @@ function resolveLanguageName(isoCode, spokenLanguages) {
   return name || isoCode.toUpperCase();
 }
 
-function hasEnglishSpokenLanguage(spokenLanguages) {
-  return (Array.isArray(spokenLanguages) ? spokenLanguages : []).some(lang => {
-    const iso = (lang?.iso_639_1 || '').toLowerCase();
-    if (iso === 'en') return true;
-    const name = (lang?.english_name || lang?.name || '').toLowerCase();
-    return name.includes('english');
-  });
-}
-
 function isEnglishLanguageValue(labelOrIso) {
   if (!labelOrIso) return false;
   const value = String(labelOrIso).trim().toLowerCase();
@@ -3128,17 +3115,6 @@ function itemIsOriginallyEnglish(item) {
   if (!item) return false;
   if (item.originalLanguageIso && isEnglishLanguageValue(item.originalLanguageIso)) return true;
   if (item.originalLanguage && isEnglishLanguageValue(item.originalLanguage)) return true;
-  return false;
-}
-
-function hasEnglishDubFlag(item) {
-  if (!item) return false;
-  const value = item.englishDubAvailable;
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    return normalized === 'yes' || normalized === 'true';
-  }
   return false;
 }
 
@@ -3214,15 +3190,6 @@ function deriveMetadataAssignments(metadata, existing = {}, options = {}) {
     ? metadata.OriginalLanguageIso
     : '';
   setField('originalLanguageIso', originalLanguageIso);
-
-  if (metadata.EnglishDubAvailable !== undefined && metadata.EnglishDubAvailable !== null) {
-    if (typeof metadata.EnglishDubAvailable === 'boolean') {
-      setField('englishDubAvailable', metadata.EnglishDubAvailable);
-    } else {
-      const normalized = String(metadata.EnglishDubAvailable).trim().toLowerCase();
-      setField('englishDubAvailable', normalized === 'yes' || normalized === 'true');
-    }
-  }
 
   const budgetValue = metadata.Budget && metadata.Budget !== 'N/A' ? metadata.Budget : '';
   setField('budget', budgetValue);
@@ -3994,7 +3961,6 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
   const revenue = formatCurrencyShort(detail.revenue);
   const originalLanguage = resolveLanguageName(detail.original_language, detail.spoken_languages);
   const tmdbId = detail.id || '';
-  const englishDubAvailable = hasEnglishSpokenLanguage(detail.spoken_languages);
   const tvSeasonCount = mediaType === 'tv'
     ? (Number(detail.number_of_seasons) || (Array.isArray(detail.seasons) ? detail.seasons.length : 0))
     : null;
@@ -4028,7 +3994,6 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
     Revenue: revenue,
     OriginalLanguage: originalLanguage,
     OriginalLanguageIso: detail.original_language || '',
-    EnglishDubAvailable: englishDubAvailable,
     TmdbID: tmdbId,
     TvSeasonCount: tvSeasonCount,
     TvEpisodeCount: tvEpisodeCount,
@@ -5650,7 +5615,6 @@ function mapAniListMediaToMetadata(media) {
       if (entry && entry.name) genreBuckets.push(entry.name);
     });
   });
-  const englishDubAvailable = Array.isArray(media.licensors) && media.licensors.length > 0;
   const normalizedStatus = normalizeAnimeStatus(media.status);
   const year = extractAnimeYear(media);
   const malId = media.mal_id || media.id || '';
@@ -5670,7 +5634,6 @@ function mapAniListMediaToMetadata(media) {
     Type: 'anime',
     OriginalLanguage: 'Japanese',
     OriginalLanguageIso: 'ja',
-    EnglishDubAvailable: englishDubAvailable,
     AnimeEpisodes: media.episodes || '',
     AnimeDuration: durationMinutes || '',
     AnimeFormat: media.format || media.type || '',
