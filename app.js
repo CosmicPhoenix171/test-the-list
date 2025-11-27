@@ -5667,6 +5667,120 @@ function loadSpinnerSourceData(listType) {
   return get(listRef).then(snap => ({ data: snap.val() || {}, source: 'remote' }));
 }
 
+function loadAllSpinnerSourceData() {
+  if (!currentUser) return Promise.resolve([]);
+  const tasks = PRIMARY_LIST_TYPES.map(listType =>
+    loadSpinnerSourceData(listType)
+      .then(payload => ({ listType, ...payload }))
+      .catch(err => {
+        console.warn('Wheel source load failed', listType, err);
+        return { listType, data: {}, source: 'error' };
+      })
+  );
+  return Promise.all(tasks);
+}
+
+function annotateWheelItem(item, listType, fallbackId) {
+  if (!item) return null;
+  const baseId = fallbackId || item.__id || item.id;
+  if (!baseId) return null;
+  return {
+    ...item,
+    __id: baseId,
+    __wheelListType: listType,
+    __wheelSourceId: baseId,
+  };
+}
+
+function createWheelCompositeId(listType, itemId) {
+  return `${listType}:${itemId}`;
+}
+
+function mapWheelCandidateMap(candidateMap, listType, { compositeKeys = false } = {}) {
+  const mapped = new Map();
+  candidateMap.forEach((item, id) => {
+    const annotated = annotateWheelItem(item, listType, id);
+    if (!annotated) return;
+    const key = compositeKeys ? createWheelCompositeId(listType, id) : id;
+    if (compositeKeys) {
+      mapped.set(key, { ...annotated, __wheelCompositeId: key });
+    } else {
+      mapped.set(key, annotated);
+    }
+  });
+  return mapped;
+}
+
+function buildAllSpinnerCandidates(scopedDataByType = {}) {
+  const displayCandidates = [];
+  const candidateMap = new Map();
+  PRIMARY_LIST_TYPES.forEach(listType => {
+    const data = scopedDataByType[listType];
+    if (!data) return;
+    const { displayCandidates: typeDisplay, candidateMap: typeMap } = buildSpinnerCandidates(listType, data);
+    const annotatedMap = mapWheelCandidateMap(typeMap, listType, { compositeKeys: true });
+    annotatedMap.forEach((item, key) => {
+      candidateMap.set(key, item);
+    });
+    const label = MEDIA_TYPE_LABELS[listType] || listType;
+    typeDisplay.forEach(entry => {
+      const compositeId = createWheelCompositeId(listType, entry.id);
+      if (!candidateMap.has(compositeId)) return;
+      displayCandidates.push({
+        id: compositeId,
+        sourceId: entry.id,
+        listType,
+        title: `${label}: ${entry.title}`,
+      });
+    });
+  });
+  displayCandidates.sort((a, b) => {
+    const titleA = (a.title || '').toLowerCase();
+    const titleB = (b.title || '').toLowerCase();
+    if (titleA < titleB) return -1;
+    if (titleA > titleB) return 1;
+    return 0;
+  });
+  return { displayCandidates, candidateMap };
+}
+
+function prepareWheelCandidateContext(listType) {
+  if (listType === 'all') {
+    return loadAllSpinnerSourceData().then(results => {
+      const scopedDataByType = {};
+      results.forEach(({ listType: type, data }) => {
+        scopedDataByType[type] = buildSpinnerDataScope(type, data);
+      });
+      const { displayCandidates, candidateMap } = buildAllSpinnerCandidates(scopedDataByType);
+      const sourceLabel = results.map(({ listType: type, source }) => `${type}:${source || 'cache'}`).join(', ');
+      return {
+        scopeLabel: 'all',
+        candidates: displayCandidates,
+        candidateMap,
+        rawDataByType: scopedDataByType,
+        sourceLabel,
+      };
+    });
+  }
+  return loadSpinnerSourceData(listType).then(({ data, source }) => {
+    const scopedData = buildSpinnerDataScope(listType, data);
+    const { displayCandidates, candidateMap } = buildSpinnerCandidates(listType, scopedData);
+    const annotatedMap = mapWheelCandidateMap(candidateMap, listType);
+    const decoratedCandidates = displayCandidates.map(entry => ({
+      ...entry,
+      sourceId: entry.id,
+      listType,
+    }));
+    return {
+      scopeLabel: listType,
+      candidates: decoratedCandidates,
+      candidateMap: annotatedMap,
+      rawDataByType: { [listType]: scopedData },
+      sourceLabel: source,
+    };
+  });
+}
+
 function clearWheelAnimation() {
   spinTimeouts.forEach(id => clearTimeout(id));
   spinTimeouts = [];
@@ -5715,17 +5829,18 @@ function renderWheelWinnerFromLookup(listType, finalEntry, candidateMap, rawData
     wheelResultEl.textContent = 'Winner selected, but no details were found.';
     return;
   }
+  const rawId = finalEntry && (finalEntry.sourceId || finalEntry.id);
   let winner = candidateMap?.get(finalEntry.id) || null;
-  if (!winner && rawData && rawData[finalEntry.id]) {
-    const fromRaw = rawData[finalEntry.id];
+  if (!winner && rawData && rawId && rawData[rawId]) {
+    const fromRaw = rawData[rawId];
     if (fromRaw) {
-      winner = fromRaw.__id ? fromRaw : Object.assign({ __id: finalEntry.id }, fromRaw);
+      winner = fromRaw.__id ? fromRaw : Object.assign({ __id: rawId }, fromRaw);
     }
   }
-  if (!winner && listCaches[listType] && listCaches[listType][finalEntry.id]) {
-    const fromCache = listCaches[listType][finalEntry.id];
+  if (!winner && rawId && listCaches[listType] && listCaches[listType][rawId]) {
+    const fromCache = listCaches[listType][rawId];
     if (fromCache) {
-      winner = fromCache.__id ? fromCache : Object.assign({ __id: finalEntry.id }, fromCache);
+      winner = fromCache.__id ? fromCache : Object.assign({ __id: rawId }, fromCache);
     }
   }
   if (!winner) {
@@ -6006,23 +6121,20 @@ function spinWheel(listType) {
   placeholder.textContent = 'Spinning…';
   wheelSpinnerEl.appendChild(placeholder);
 
-  loadSpinnerSourceData(listType).then(({ data, source }) => {
+  prepareWheelCandidateContext(listType).then(({ scopeLabel, candidates, candidateMap, rawDataByType, sourceLabel }) => {
     if (!wheelSpinnerEl || !wheelResultEl) {
       clearWheelAnimation();
       return;
     }
-    const scopedData = buildSpinnerDataScope(listType, data);
-    const { displayCandidates: candidates, candidateMap } = buildSpinnerCandidates(listType, scopedData);
     try {
       console.log('[Wheel] spin start', {
-        listType,
-        source,
+        listType: scopeLabel,
+        source: sourceLabel,
         candidateCount: candidates.length,
         titles: candidates.map(c => c && c.title).filter(Boolean)
       });
     } catch (_) {}
     if (candidates.length === 0) {
-      if (!wheelSpinnerEl || !wheelResultEl) return;
       clearWheelAnimation();
       const emptyState = document.createElement('span');
       emptyState.className = 'spin-text';
@@ -6033,23 +6145,38 @@ function spinWheel(listType) {
     }
     const chosenIndex = Math.floor(Math.random() * candidates.length);
     const chosenEntry = candidates[chosenIndex];
-    const chosenItem = chosenEntry && candidateMap.get(chosenEntry.id);
-    const resolvedItem = chosenItem ? (resolveSeriesRedirect(listType, chosenItem, data) || chosenItem) : null;
-    const resolvedEntry = resolvedItem
-      ? { id: resolvedItem.__id || resolvedItem.id, title: resolvedItem.title || chosenEntry?.title || '(no title)' }
-      : chosenEntry;
+    const chosenItem = chosenEntry ? candidateMap.get(chosenEntry.id) : null;
+    const entryListType = chosenItem?.__wheelListType || chosenEntry?.listType || listType;
+    const scopedData = rawDataByType[entryListType] || {};
+    const resolvedItem = chosenItem ? (resolveSeriesRedirect(entryListType, chosenItem, scopedData) || chosenItem) : null;
+    const resolvedSourceId = resolvedItem
+      ? (resolvedItem.__wheelSourceId || resolvedItem.__id || resolvedItem.id)
+      : (chosenEntry?.sourceId || chosenEntry?.id);
+    const compositeId = resolvedSourceId ? createWheelCompositeId(entryListType, resolvedSourceId) : '';
+    const candidateKey = compositeId && candidateMap.has(compositeId)
+      ? compositeId
+      : resolvedSourceId || chosenEntry?.id;
+    const resolvedEntry = {
+      id: candidateKey,
+      listType: entryListType,
+      sourceId: resolvedSourceId || chosenEntry?.sourceId || chosenEntry?.id,
+      title: resolvedItem?.title || chosenEntry?.title || '(no title)'
+    };
     try {
       console.log('[Wheel] pick', {
+        scope: scopeLabel,
         chosenIndex,
         chosen: chosenEntry?.title,
+        chosenType: entryListType,
         resolved: resolvedEntry?.title,
         resolvedId: resolvedEntry?.id,
       });
     } catch (_) {}
     const finalize = (finalEntry) => {
-      renderWheelWinnerFromLookup(listType, finalEntry, candidateMap, data);
+      const finalType = finalEntry?.listType || entryListType;
+      renderWheelWinnerFromLookup(finalType, finalEntry, candidateMap, rawDataByType[finalType]);
     };
-    animateWheelSequence(candidates, chosenIndex, listType, resolvedEntry, finalize);
+    animateWheelSequence(candidates, chosenIndex, scopeLabel, resolvedEntry, finalize);
   }).catch(err => {
     console.error('Wheel load failed', err);
     if (!wheelSpinnerEl || !wheelResultEl) {
