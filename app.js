@@ -1553,6 +1553,9 @@ class VirtualizedCardGrid {
     this.entries = [];
     this.rangeStart = 0;
     this.rangeEnd = 0;
+    this.rowHeight = this.options.estimatedItemHeight;
+    this.itemsPerRow = 1;
+    this.pendingMeasureFrame = null;
     this.topSpacer = createEl('div', 'virtual-spacer');
     this.viewport = createEl('div', 'virtualized-viewport movies-grid unified-grid');
     this.bottomSpacer = createEl('div', 'virtual-spacer');
@@ -1562,13 +1565,21 @@ class VirtualizedCardGrid {
     this.container.appendChild(this.viewport);
     this.container.appendChild(this.bottomSpacer);
     this.handleScroll = this.updateVisibleRange.bind(this);
+    this.handleResize = () => {
+      this.measureFromViewport(true);
+      this.updateVisibleRange(true);
+    };
     window.addEventListener('scroll', this.handleScroll, { passive: true });
-    window.addEventListener('resize', this.handleScroll, { passive: true });
+    window.addEventListener('resize', this.handleResize, { passive: true });
   }
 
   destroy() {
     window.removeEventListener('scroll', this.handleScroll);
-    window.removeEventListener('resize', this.handleScroll);
+    window.removeEventListener('resize', this.handleResize);
+    if (this.pendingMeasureFrame) {
+      cancelAnimationFrame(this.pendingMeasureFrame);
+      this.pendingMeasureFrame = null;
+    }
     if (this.container) {
       this.container.classList.remove('virtualized-container');
       this.container.innerHTML = '';
@@ -1585,9 +1596,16 @@ class VirtualizedCardGrid {
   }
 
   refreshSpacers() {
-    const totalHeight = Math.max(0, this.entries.length * this.options.estimatedItemHeight);
+    const totalRows = Math.max(0, Math.ceil((this.entries.length || 0) / this.itemsPerRow));
+    const totalHeight = totalRows * this.rowHeight;
     this.topSpacer.style.height = '0px';
     this.bottomSpacer.style.height = `${totalHeight}px`;
+  }
+
+  computeOverscanRows() {
+    const overscanItems = Math.max(0, Number(this.options.overscan) || 0);
+    const perRow = Math.max(1, this.itemsPerRow);
+    return Math.max(1, Math.ceil(overscanItems / perRow));
   }
 
   updateVisibleRange(force = false) {
@@ -1600,17 +1618,21 @@ class VirtualizedCardGrid {
     const containerTop = containerRect.top + window.scrollY;
     const viewportHeight = window.innerHeight;
     const scrollTop = Math.max(0, window.scrollY - containerTop);
-    const itemHeight = this.options.estimatedItemHeight;
-    const overscan = this.options.overscan;
-    const start = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
-    const end = Math.min(this.entries.length, Math.ceil((scrollTop + viewportHeight) / itemHeight) + overscan);
+    const rowHeight = Math.max(1, this.rowHeight);
+    const overscanRows = this.computeOverscanRows();
+    const startRow = Math.max(0, Math.floor(scrollTop / rowHeight) - overscanRows);
+    const endRow = Math.ceil((scrollTop + viewportHeight) / rowHeight) + overscanRows;
+    const start = Math.max(0, Math.min(this.entries.length, startRow * this.itemsPerRow));
+    const end = Math.max(start, Math.min(this.entries.length, endRow * this.itemsPerRow));
     if (!force && start === this.rangeStart && end === this.rangeEnd) {
       return;
     }
     this.rangeStart = start;
     this.rangeEnd = end;
-    this.topSpacer.style.height = `${start * itemHeight}px`;
-    this.bottomSpacer.style.height = `${Math.max(0, (this.entries.length - end) * itemHeight)}px`;
+    this.topSpacer.style.height = `${startRow * rowHeight}px`;
+    const totalRows = Math.max(0, Math.ceil(this.entries.length / this.itemsPerRow));
+    const clampedEndRow = Math.min(totalRows, endRow);
+    this.bottomSpacer.style.height = `${Math.max(0, (totalRows - clampedEndRow) * rowHeight)}px`;
     this.viewport.innerHTML = '';
     for (let i = start; i < end; i++) {
       const entry = this.entries[i];
@@ -1619,6 +1641,50 @@ class VirtualizedCardGrid {
         this.viewport.appendChild(node);
       }
     }
+    this.measureFromViewport();
+  }
+
+  measureFromViewport(force = false) {
+    if (!this.viewport) return;
+    const children = Array.from(this.viewport.children || []);
+    if (!children.length) return;
+    const firstRect = children[0].getBoundingClientRect();
+    if (!firstRect || !firstRect.height) return;
+    let columns = 1;
+    const tolerance = 1;
+    for (let i = 1; i < children.length; i++) {
+      const rect = children[i].getBoundingClientRect();
+      if (Math.abs(rect.top - firstRect.top) <= tolerance) {
+        columns += 1;
+      } else {
+        break;
+      }
+    }
+    const styles = window.getComputedStyle(this.viewport);
+    const rowGap = parseFloat(styles.rowGap || styles.gap || '0') || 0;
+    const measuredRowHeight = Math.ceil(firstRect.height + rowGap);
+    if (columns < 1) {
+      const cardWidth = firstRect.width || Math.max(1, parseFloat(styles.minWidth || '0'));
+      const availableWidth = this.viewport.clientWidth || cardWidth;
+      columns = Math.max(1, Math.floor(availableWidth / Math.max(1, cardWidth)));
+    }
+    const normalizedRowHeight = Math.max(1, measuredRowHeight || this.rowHeight);
+    const changed = columns !== this.itemsPerRow || Math.abs(normalizedRowHeight - this.rowHeight) > 1;
+    if (!changed && !force) return;
+    this.itemsPerRow = columns;
+    this.rowHeight = normalizedRowHeight;
+    this.refreshSpacers();
+    this.scheduleReflow();
+  }
+
+  scheduleReflow() {
+    if (this.pendingMeasureFrame) {
+      cancelAnimationFrame(this.pendingMeasureFrame);
+    }
+    this.pendingMeasureFrame = requestAnimationFrame(() => {
+      this.pendingMeasureFrame = null;
+      this.updateVisibleRange(true);
+    });
   }
 }
 
