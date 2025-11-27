@@ -1868,7 +1868,7 @@ function collectUnifiedEntries() {
 function updateLibraryRuntimeStats() {
   if (!libraryStatsSummaryEl) return;
   const stats = computeLibraryRuntimeStats();
-  if (!stats.hasAnyData) {
+  if (!stats.hasAnyData || !libraryFullyLoaded) {
     libraryStatsSummaryEl.textContent = 'Totals update once your lists load.';
     libraryStatsSummaryEl.classList.remove('has-data');
     libraryStatsSummaryEl.removeAttribute('aria-label');
@@ -1891,16 +1891,7 @@ function updateLibraryRuntimeStats() {
   libraryStatsSummaryEl.appendChild(runtimeChip);
 
   if (stats.totalMinutes > 0) {
-    if (libraryFullyLoaded) {
-      animateRuntimeProgression(runtimeChip, stats.totalMinutes);
-    } else {
-      const valueEl = runtimeChip.querySelector('.library-stat-value');
-      if (valueEl) {
-        valueEl.textContent = formatRuntimeDurationDetailed(stats.totalMinutes) + ' to finish';
-      }
-      const thresholdClass = getRuntimeThresholdClass(stats.totalMinutes);
-      runtimeChip.classList.add(thresholdClass);
-    }
+    animateRuntimeProgression(runtimeChip, stats.totalMinutes);
   } else {
     const valueEl = runtimeChip.querySelector('.library-stat-value');
     if (valueEl) valueEl.textContent = 'Runtime info unavailable';
