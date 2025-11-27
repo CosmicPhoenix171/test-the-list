@@ -164,29 +164,62 @@ function getRuntimeThresholdClass(totalMinutes) {
   return 'runtime-years';
 }
 
+function formatRuntimeForAnimation(totalMinutes) {
+  if (totalMinutes < 60) {
+    return `${Math.floor(totalMinutes).toString().padStart(2, ' ')} minutes`;
+  }
+  if (totalMinutes < 1440) {
+    const hours = totalMinutes / 60;
+    return `${hours.toFixed(1).padStart(4, ' ')} hours`;
+  }
+  if (totalMinutes < 10080) {
+    const days = totalMinutes / 1440;
+    return `${days.toFixed(1).padStart(4, ' ')} days`;
+  }
+  if (totalMinutes < 43200) {
+    const weeks = totalMinutes / 10080;
+    return `${weeks.toFixed(1).padStart(4, ' ')} weeks`;
+  }
+  if (totalMinutes < 525600) {
+    const months = totalMinutes / 43200;
+    return `${months.toFixed(1).padStart(4, ' ')} months`;
+  }
+  const years = totalMinutes / 525600;
+  return `${years.toFixed(1).padStart(4, ' ')} years`;
+}
+
 function animateRuntimeProgression(chipElement, finalMinutes) {
   if (!chipElement || finalMinutes <= 0) return;
   
   const valueEl = chipElement.querySelector('.library-stat-value');
   if (!valueEl) return;
   
+  const TARGET_SECTION_DURATION_MS = 5000;
+  const FPS = 60;
+  const FRAMES_PER_SECTION = (TARGET_SECTION_DURATION_MS / 1000) * FPS;
+  
   const thresholds = [
-    { max: 60, class: 'runtime-minutes', increment: 0.5 },
-    { max: 1440, class: 'runtime-hours', increment: 8 },
-    { max: 10080, class: 'runtime-days', increment: 80 },
-    { max: 43200, class: 'runtime-weeks', increment: 350 },
-    { max: 525600, class: 'runtime-months', increment: 1800 },
-    { max: Infinity, class: 'runtime-years', increment: 8000 }
+    { max: 60, class: 'runtime-minutes' },
+    { max: 1440, class: 'runtime-hours' },
+    { max: 10080, class: 'runtime-days' },
+    { max: 43200, class: 'runtime-weeks' },
+    { max: 525600, class: 'runtime-months' },
+    { max: Infinity, class: 'runtime-years' }
   ];
   
   let currentMinutes = 0;
   let lastThresholdIndex = -1;
-  let currentIncrement = 0.5;
+  let currentIncrement = 0;
+  let thresholdStartMinutes = 0;
   
   function updateFrame() {
     const thresholdIndex = thresholds.findIndex(t => currentMinutes < t.max);
     if (thresholdIndex >= 0 && thresholdIndex !== lastThresholdIndex) {
-      currentIncrement = thresholds[thresholdIndex].increment;
+      thresholdStartMinutes = currentMinutes;
+      const nextThreshold = Math.min(thresholds[thresholdIndex].max, finalMinutes);
+      const rangeToAnimate = nextThreshold - thresholdStartMinutes;
+      currentIncrement = rangeToAnimate / FRAMES_PER_SECTION;
+      
       thresholds.forEach(t => chipElement.classList.remove(t.class));
       chipElement.classList.add(thresholds[thresholdIndex].class);
       lastThresholdIndex = thresholdIndex;
@@ -198,13 +231,13 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
       currentMinutes = finalMinutes;
     }
     
-    const displayText = formatRuntimeDurationDetailed(Math.floor(currentMinutes)) + ' to finish';
+    const displayText = formatRuntimeForAnimation(currentMinutes) + ' to finish';
     valueEl.textContent = displayText;
     
     if (currentMinutes < finalMinutes) {
       requestAnimationFrame(updateFrame);
     } else {
-      valueEl.textContent = formatRuntimeDurationDetailed(finalMinutes) + ' to finish';
+      valueEl.textContent = formatRuntimeForAnimation(finalMinutes) + ' to finish';
       thresholds.forEach(t => chipElement.classList.remove(t.class));
       chipElement.classList.add(getRuntimeThresholdClass(finalMinutes));
     }
