@@ -194,9 +194,19 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
   const valueEl = chipElement.querySelector('.library-stat-value');
   if (!valueEl) return;
   
-  const TARGET_SECTION_DURATION_MS = 5000;
+  const TARGET_DURATION_MS = 5000;
   const FPS = 60;
-  const FRAMES_PER_SECTION = (TARGET_SECTION_DURATION_MS / 1000) * FPS;
+  const TOTAL_FRAMES = (TARGET_DURATION_MS / 1000) * FPS;
+  
+  const breakdown = breakdownDurationMinutes(finalMinutes);
+  const maxValues = {
+    minutes: 60,
+    hours: 24,
+    days: 30,
+    weeks: Math.ceil(breakdown.days / 7),
+    months: 12,
+    years: breakdown.years
+  };
   
   const thresholds = [
     { max: 60, class: 'runtime-minutes' },
@@ -207,34 +217,77 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
     { max: Infinity, class: 'runtime-years' }
   ];
   
-  let currentMinutes = 0;
-  let lastThresholdIndex = -1;
-  let currentIncrement = 0;
-  let thresholdStartMinutes = 0;
+  let animationState = {
+    years: 0,
+    months: 0,
+    days: 0,
+    hours: 0,
+    minutes: 0
+  };
+  
+  const increments = {
+    years: breakdown.years / TOTAL_FRAMES,
+    months: maxValues.months / TOTAL_FRAMES,
+    days: maxValues.days / TOTAL_FRAMES,
+    hours: maxValues.hours / TOTAL_FRAMES,
+    minutes: maxValues.minutes / TOTAL_FRAMES
+  };
   
   function updateFrame() {
-    const thresholdIndex = thresholds.findIndex(t => currentMinutes < t.max);
-    if (thresholdIndex >= 0 && thresholdIndex !== lastThresholdIndex) {
-      thresholdStartMinutes = currentMinutes;
-      const nextThreshold = Math.min(thresholds[thresholdIndex].max, finalMinutes);
-      const rangeToAnimate = nextThreshold - thresholdStartMinutes;
-      currentIncrement = rangeToAnimate / FRAMES_PER_SECTION;
-      
+    animationState.minutes += increments.minutes;
+    if (animationState.minutes >= maxValues.minutes && breakdown.hours > 0) {
+      animationState.minutes = 0;
+      animationState.hours += increments.hours;
+    }
+    if (animationState.hours >= maxValues.hours && breakdown.days > 0) {
+      animationState.hours = 0;
+      animationState.days += increments.days;
+    }
+    if (animationState.days >= maxValues.days && breakdown.months > 0) {
+      animationState.days = 0;
+      animationState.months += increments.months;
+    }
+    if (animationState.months >= maxValues.months && breakdown.years > 0) {
+      animationState.months = 0;
+      animationState.years += increments.years;
+    }
+    
+    const currentTotalMinutes = 
+      animationState.years * 525600 +
+      animationState.months * 43200 +
+      animationState.days * 1440 +
+      animationState.hours * 60 +
+      animationState.minutes;
+    
+    const thresholdIndex = thresholds.findIndex(t => currentTotalMinutes < t.max);
+    if (thresholdIndex >= 0) {
       thresholds.forEach(t => chipElement.classList.remove(t.class));
       chipElement.classList.add(thresholds[thresholdIndex].class);
-      lastThresholdIndex = thresholdIndex;
     }
     
-    currentMinutes += currentIncrement;
+    const displayBreakdown = {
+      years: Math.floor(animationState.years),
+      months: Math.floor(animationState.months),
+      days: Math.floor(animationState.days),
+      hours: Math.floor(animationState.hours),
+      minutes: Math.floor(animationState.minutes)
+    };
     
-    if (currentMinutes >= finalMinutes) {
-      currentMinutes = finalMinutes;
-    }
+    const parts = [];
+    const hasYears = displayBreakdown.years > 0 || breakdown.years > 0;
+    const hasMonths = displayBreakdown.months > 0 || breakdown.months > 0;
+    const hasDays = displayBreakdown.days > 0 || breakdown.days > 0;
+    const hasHours = displayBreakdown.hours > 0 || breakdown.hours > 0;
     
-    const displayText = formatRuntimeDurationDetailed(Math.floor(currentMinutes));
-    valueEl.innerHTML = displayText;
+    if (hasYears) parts.push(formatDurationUnit(displayBreakdown.years, 'year'));
+    if (hasMonths) parts.push(formatDurationUnit(displayBreakdown.months, 'month', hasYears && displayBreakdown.years > 0));
+    if (hasDays) parts.push(formatDurationUnit(displayBreakdown.days, 'day', (hasMonths && displayBreakdown.months > 0) || (hasYears && displayBreakdown.years > 0)));
+    if (hasHours) parts.push(formatDurationUnit(displayBreakdown.hours, 'hour', (hasDays && displayBreakdown.days > 0) || (hasMonths && displayBreakdown.months > 0) || (hasYears && displayBreakdown.years > 0)));
+    parts.push(formatDurationUnit(displayBreakdown.minutes, 'minute', (hasHours && displayBreakdown.hours > 0) || (hasDays && displayBreakdown.days > 0) || (hasMonths && displayBreakdown.months > 0) || (hasYears && displayBreakdown.years > 0)));
     
-    if (currentMinutes < finalMinutes) {
+    valueEl.innerHTML = parts.join(', ');
+    
+    if (currentTotalMinutes < finalMinutes) {
       requestAnimationFrame(updateFrame);
     } else {
       valueEl.innerHTML = formatRuntimeDurationDetailed(finalMinutes);
