@@ -15,87 +15,50 @@ import {
   ref,
   push,
   set,
-  onValue,
-  remove,
   update,
-  off,
+  remove,
+  onValue,
   query,
-  orderByChild
+  orderByChild,
+  get
 } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
-import { initWheelModal, closeWheelModal } from './wheel-modal.js';
-import { showAlert, pushNotification } from './alerts.js';
-
-const APP_VERSION = '1.0.0';
-const TMDB_API_KEY = '46dcf1eaa2ce4284037a00fdefca9bb8';
-const GOOGLE_BOOKS_API_KEY = ''; // TODO: Add your Google Books API Key
-const JIKAN_API_BASE_URL = 'https://api.jikan.moe/v4';
-const TMDB_API_BASE_URL = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
-const GOOGLE_BOOKS_API_URL = 'https://www.googleapis.com/books/v1';
-const MYANIMELIST_ANIME_URL = 'https://myanimelist.net/anime';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCWJpMYjSdV9awGRwJ3zyZ_9sDjUrnTu2I",
-  authDomain: "the-list-a700d.firebaseapp.com",
-  databaseURL: "https://the-list-a700d-default-rtdb.firebaseio.com",
-  projectId: "the-list-a700d",
-  storageBucket: "the-list-a700d.firebasestorage.app",
-  messagingSenderId: "24313817411",
-  appId: "1:24313817411:web:0aba69eaadade9843a27f6",
-  measurementId: "G-YXJ2E2XG42"
+  apiKey: 'AIzaSyCWJpMYjSdV9awGRwJ3zyZ_9sDjUrnTu2I',
+  authDomain: 'the-list-a700d.firebaseapp.com',
+  databaseURL: 'https://the-list-a700d-default-rtdb.firebaseio.com',
+  projectId: 'the-list-a700d',
+  storageBucket: 'the-list-a700d.firebasestorage.app',
+  messagingSenderId: '24313817411',
+  appId: '1:24313817411:web:0aba69eaadade9843a27f6',
+  measurementId: 'G-YXJ2E2XG42',
 };
 
-const PRIMARY_LIST_TYPES = ['movies', 'tvShows', 'anime', 'books'];
-const MEDIA_TYPE_LABELS = {
-  movies: 'Movies',
-  tvShows: 'TV Shows',
-  anime: 'Anime',
-  books: 'Books',
-};
-const WATCH_PROVIDER_LISTS = new Set(['movies', 'tvShows']);
-const COLLAPSIBLE_LISTS = new Set(['movies', 'tvShows', 'anime']);
-const AUTOCOMPLETE_LISTS = new Set(['movies', 'tvShows', 'anime', 'books']);
-const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
-const WATCH_TIME_LISTS = new Set(['movies', 'tvShows', 'anime']);
-const TMDB_KEYWORD_DISCOVER_PAGE_LIMIT = 5;
-const JIKAN_MAX_RETRIES = 3;
-const JIKAN_RATE_LIMIT_BACKOFF_MS = 1500;
-const JIKAN_MAX_REQUESTS_PER_SECOND = 1;
-const JIKAN_MAX_REQUESTS_PER_MINUTE = 25;
-const JIKAN_SECOND_WINDOW_MS = 1000;
-const JIKAN_MINUTE_WINDOW_MS = 1000 * 60;
-const JIKAN_RATE_LIMIT_MIN_INTERVAL_MS = Math.ceil(JIKAN_SECOND_WINDOW_MS / JIKAN_MAX_REQUESTS_PER_SECOND);
-const JIKAN_DEFAULT_RETRY_AFTER_MS = 8000;
-const JIKAN_ERROR_NOTICE_COOLDOWN_MS = 1000 * 60 * 2;
-const ANIME_STATUS_PRIORITY = {
-  RELEASING: 4,
-  AIRING: 4,
-  CURRENTLY_AIRING: 4,
-  FINISHED: 3,
-  COMPLETED: 3,
-  NOT_YET_RELEASED: 2,
-  PLANNED: 2,
-  CANCELLED: 1,
-  HIATUS: 1,
-};
-const METADATA_SCHEMA_VERSION = 1;
-const METADATA_REFRESH_COOLDOWN_MS = 1000 * 60 * 5; // avoid hitting metadata APIs repeatedly
-const ANIME_FRANCHISE_IGNORE_KEY = 'animeFranchiseIgnoredIds';
-const LAST_ADD_LIST_TYPE_KEY = 'lastAddListType';
-const ANIME_FRANCHISE_LAST_SCAN_KEY = 'animeFranchiseLastScan';
-const INTRO_SESSION_KEY = 'introPlayed';
+// TMDb API powers metadata, autocomplete, and franchise info (recommended)
+// Create a key at https://www.themoviedb.org/settings/api and paste it here.
+const TMDB_API_KEY = '46dcf1eaa2ce4284037a00fdefca9bb8';
+const TMDB_API_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
+const TMDB_KEYWORD_DISCOVER_PAGE_LIMIT = 3;
+const TMDB_KEYWORD_DISCOVER_MAX_RESULTS = 40;
+const GOOGLE_BOOKS_API_KEY = '';
+const GOOGLE_BOOKS_API_URL = 'https://www.googleapis.com/books/v1';
+const JIKAN_API_BASE_URL = 'https://api.jikan.moe/v4';
+const MYANIMELIST_ANIME_URL = 'https://myanimelist.net/anime';
+const METADATA_SCHEMA_VERSION = 3;
+const APP_VERSION = 'test-pages-2025.11.15';
 const ANIME_FRANCHISE_RELATION_TYPES = new Set([
   'SEQUEL',
   'PREQUEL',
-  'ALTERNATE',
-  'ALTERNATE_VERSION',
+  'MAIN_STORY',
   'SIDE_STORY',
-  'SUMMARY',
-  'OTHER',
-  'ADAPTATION',
+  'ALTERNATIVE',
+  'SPIN_OFF',
+  'COMPILATION',
+  'CONTAINS',
   'PARENT',
   'CHILD',
-  'SPIN_OFF',
+  'OTHER'
 ]);
 const ANIME_FRANCHISE_ALLOWED_FORMATS = new Set([
   'TV',
@@ -103,424 +66,330 @@ const ANIME_FRANCHISE_ALLOWED_FORMATS = new Set([
   'ONA',
   'OVA',
   'MOVIE',
-  'SPECIAL',
-  'MUSIC',
+  'SPECIAL'
 ]);
-const ANIME_SEASON_FORMATS = new Set(['TV', 'TV_SHORT', 'ONA']);
-const ANIME_FRANCHISE_MAX_ENTRIES = 64;
-const ANIME_FRANCHISE_MAX_DEPTH = 3;
-const ANIME_FRANCHISE_RESCAN_INTERVAL_MS = 1000 * 60 * 60 * 24;
+const ANIME_FRANCHISE_MAX_DEPTH = 4;
+const ANIME_FRANCHISE_MAX_ENTRIES = 25;
 const ANIME_FRANCHISE_SCAN_SERIES_LIMIT = 4;
+const ANIME_FRANCHISE_RESCAN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const ANIME_FRANCHISE_IGNORE_KEY = '__THE_LIST_ANIME_IGNORE__';
+const ANIME_STATUS_PRIORITY = {
+  RELEASING: 6,
+  NOT_YET_RELEASED: 5,
+  HIATUS: 4,
+  CANCELLED: 3,
+  FINISHED: 2,
+  UNKNOWN: 1,
+};
 
-const listCaches = {};
-const actorFilters = {};
-const sortModes = {};
+// -----------------------
+// App state
+let appInitialized = false;
+let currentUser = null;
 const listeners = {};
-const animeFranchiseIgnoredIds = new Set();
-const suggestionForms = new Set();
-const seriesGroups = {};
-const expandedCards = {};
+let tmdbWarningShown = false;
+let spinTimeouts = [];
+const actorFilters = { movies: '', tvShows: '', anime: '' };
+const expandedCards = { movies: new Set() };
+const sortModes = { movies: 'title', tvShows: 'title', anime: 'title', books: 'title' };
+const listCaches = {};
 const metadataRefreshInflight = new Set();
-const seriesCarouselState = {};
-const jikanNotFoundAnimeIds = new Set();
-const animeFranchiseMissingHashes = new Map();
-const metadataRefreshHistory = new Map();
-const jikanSecondWindow = [];
-const jikanMinuteWindow = [];
-const jikanErrorNoticeTimestamps = new Map();
-const UNIFIED_PLACEHOLDER_MIN_HEIGHT = 260;
-const UNIFIED_VIEWPORT_BUFFER_PX = 800;
-const UNIFIED_INITIAL_RENDER_COUNT = 24;
-let unifiedVirtualObserver = null;
-let unifiedVirtualRecords = [];
-let unifiedRenderedPlaceholderMap = new WeakMap();
-let unifiedVisibilityFallbackBound = false;
-let unifiedVisibilityFallbackHandler = null;
-let unifiedVisibilityFallbackRaf = 0;
+const AUTOCOMPLETE_LISTS = new Set(['movies', 'tvShows', 'anime', 'books']);
+const PRIMARY_LIST_TYPES = ['movies', 'tvShows', 'anime', 'books'];
+const suggestionForms = new Set();
+let globalSuggestionClickBound = false;
+const seriesGroups = {};
+const seriesCarouselState = { movies: new Map(), tvShows: new Map(), anime: new Map() };
+const COLLAPSIBLE_LISTS = new Set(['movies', 'tvShows', 'anime']);
+const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
+const INTRO_SESSION_KEY = '__THE_LIST_INTRO_SEEN__';
+let introPlayed = safeStorageGet(INTRO_SESSION_KEY) === '1';
 const unifiedFilters = {
   search: '',
-  types: new Set(PRIMARY_LIST_TYPES)
+  types: new Set(PRIMARY_LIST_TYPES),
 };
-const GLOBAL_LOADING_PRIORITY = ['franchiseAutoAdd', 'jikanCooldown', 'unifiedLoad'];
-const GLOBAL_LOADING_MESSAGES = {
-  franchiseAutoAdd: 'Adding related anime entries...',
-  jikanCooldown: 'Cooling down MyAnimeList requests...',
-  unifiedLoad: 'Loading your library...'
+const MEDIA_TYPE_LABELS = {
+  movies: 'Movies',
+  tvShows: 'TV Shows',
+  anime: 'Anime',
+  books: 'Books',
 };
-const listInitialLoadState = new Map();
-const globalLoadingReasons = new Map();
-let globalLoadingOverlayEl = null;
-let globalLoadingMessageEl = null;
-let globalLoadingOverlayInitPending = false;
-let jikanCooldownTimerId = null;
-let franchiseAutoAddInflight = 0;
 
-let pendingAnimeScanData = null;
+// DOM references
+const loginScreen = document.getElementById('login-screen');
+const googleSigninBtn = document.getElementById('google-signin');
+const appRoot = document.getElementById('app');
+const userNameEl = document.getElementById('user-name');
+const signOutBtn = document.getElementById('sign-out');
+const backToTopBtn = document.getElementById('back-to-top');
+const modalRoot = document.getElementById('modal-root');
+const combinedListEl = document.getElementById('combined-list');
+const unifiedSearchInput = document.getElementById('library-search');
+const typeFilterButtons = document.querySelectorAll('[data-type-toggle]');
+const notificationCenter = document.getElementById('notification-center');
+const wheelModalTrigger = document.getElementById('open-wheel-modal');
+const wheelModalTemplate = document.getElementById('wheel-modal-template');
+let wheelSourceSelect = null;
+let wheelSpinnerEl = null;
+let wheelResultEl = null;
+let wheelModalState = null;
+const addModalTrigger = document.getElementById('open-add-modal');
+const addFormTemplatesContainer = document.getElementById('add-form-templates');
+const addFormTemplateMap = {};
+if (addFormTemplatesContainer) {
+  addFormTemplatesContainer.querySelectorAll('template[data-list]').forEach(template => {
+    const type = template && template.dataset ? template.dataset.list : '';
+    if (type) {
+      addFormTemplateMap[type] = template;
+    }
+  });
+}
+let activeAddModal = null;
+
 let animeFranchiseScanTimer = null;
 let animeFranchiseScanInflight = false;
-let animeFranchiseLastScanTime = Number(safeLocalStorageGet(ANIME_FRANCHISE_LAST_SCAN_KEY)) || 0;
-let lastJikanRequestTimestamp = 0;
-let lastJikanRateLimitNotice = 0;
-let lastJikanNetworkIssueNotice = 0;
-let jikanRateLimiterTail = Promise.resolve();
-let jikanForcedCooldownUntil = 0;
-
-let currentUser = null;
-let appInitialized = false;
-let introPlayed = false;
-let tmdbWarningShown = false;
-let globalSuggestionClickBound = false;
-
-const googleSigninBtn = document.getElementById('google-signin');
-const signOutBtn = document.getElementById('sign-out');
-const modalRoot = document.getElementById('modal-root');
-const backToTopBtn = document.getElementById('back-to-top');
-const appRoot = document.getElementById('app');
-const loginScreen = document.getElementById('login-screen');
-const unifiedSearchInput = document.getElementById('library-search');
-let typeFilterButtons = [];
-let typeFilterDelegationBound = false;
-const userNameEl = document.getElementById('user-name');
+let animeFranchiseLastScanSignature = '';
+let animeFranchiseLastScanTime = 0;
+let pendingAnimeScanData = null;
+const animeFranchiseMissingHashes = new Map();
+const animeFranchiseIgnoredIds = loadAnimeFranchiseIgnoredIds();
 
 const tmEasterEgg = (() => {
-  const TRIGGER_SELECTOR = '.tm';
-  const LAYER_ID = 'tm-rain-layer';
-  const MIN_SPRITES = 18;
-  const MAX_SPRITES = 32;
-  const MIN_FALL_MS = 2200;
-  const MAX_FALL_MS = 3600;
-  const BURST_COOLDOWN_MS = 1200;
-  const WINTER_THEME = 'festive';
-  const WINTER_LOOP_MIN_DELAY = 320;
-  const WINTER_LOOP_MAX_DELAY = 640;
-  const WINTER_LOOP_BATCH = 2;
-  const THEMES = {
-    default: { glyph: 'TM', colors: ['#ff2679', '#7df2c9', '#50c9ff'] },
-    pride: { glyph: 'TM', colors: ['#ff7aa2', '#ffb347', '#fff275', '#7df2c9', '#50c9ff', '#c084fc'] },
-    spooky: { glyph: 'TM', colors: ['#fb923c', '#f97316', '#fde68a', '#f87171'] },
-    festive: { glyph: 'TM', colors: ['#7df2c9', '#50c9ff', '#f5c568', '#fef9c3'] },
+  const sprites = [];
+  let running = false;
+  let spawnTimer = null;
+  let rafId = null;
+  let layer = null;
+  let intensityMultiplier = 1;
+  const gravity = 0.32;
+  const bounce = 0.68;
+  const friction = 0.995;
+  const settleThreshold = 0.12;
+  const wakeSpeed = 0.35;
+  const supportAngleThreshold = 0.5;
+  const supportDistanceEpsilon = 0.75;
+  const spawnMinDelay = 320;
+  const spawnMaxDelay = 900;
+
+  const seasonThemes = {
+    winter: {
+      text: '❄',
+      color: '#c3e8ff',
+      glow: '0 0 18px rgba(195,232,255,0.85)',
+    },
+    halloween: {
+      text: '🎃',
+      color: '#ffb347',
+      glow: '0 0 18px rgba(255,138,0,0.85)',
+    },
   };
-  let layerEl = null;
-  let hideTimer = null;
-  let lastBurstAt = 0;
-  let activeTheme = 'default';
-  const activeAnimations = new Set();
-  let triggersBound = false;
-  let winterLoopActive = false;
-  let winterLoopTimer = null;
 
-  const rand = (min, max) => Math.random() * (max - min) + min;
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-  function ensureLayer() {
-    if (layerEl && document.body.contains(layerEl)) return layerEl;
-    layerEl = document.getElementById(LAYER_ID);
-    if (!layerEl) {
-      layerEl = document.createElement('div');
-      layerEl.id = LAYER_ID;
-      layerEl.setAttribute('aria-hidden', 'true');
-      layerEl.classList.add('tm-rain-layer');
-      document.body.appendChild(layerEl);
-    }
-    return layerEl;
+  function getSeasonalTheme(now = new Date()) {
+    const month = now.getMonth(); // 0-indexed
+    if (month === 11) return seasonThemes.winter; // December
+    if (month === 9) return seasonThemes.halloween; // October
+    return null;
   }
 
-  function resolveThemeName(preferred) {
-    if (preferred && THEMES[preferred]) return preferred;
+  function getCurrentTmTheme() {
     return getSeasonalTheme();
   }
 
-  function resolveTheme(name) {
-    return THEMES[name] || THEMES.default;
-  }
-
-  function setLayerActive(themeName) {
-    const layer = ensureLayer();
-    if (!layer) return null;
-    layer.classList.add('active');
-    layer.dataset.theme = themeName;
-    activeTheme = themeName;
+  function ensureLayer() {
+    if (layer) return layer;
+    layer = document.createElement('div');
+    layer.id = 'tm-rain-layer';
+    document.body.appendChild(layer);
     return layer;
   }
 
-  function hideLayerSoon() {
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
-      if (!activeAnimations.size && layerEl && !winterLoopActive) {
-        layerEl.classList.remove('active');
-      }
-    }, 650);
-  }
-
-  function spawnSprite(themeName) {
-    const layer = setLayerActive(themeName);
-    if (!layer) return;
-    const palette = resolveTheme(themeName);
-    const sprite = document.createElement('span');
-    sprite.className = 'tm-sprite';
-    sprite.textContent = palette.glyph || 'TM';
-
-    const startX = rand(5, 95);
-    const drift = rand(-18, 18);
-    const endX = clamp(startX + drift, 3, 97);
-    const duration = rand(MIN_FALL_MS, MAX_FALL_MS);
-    const color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
-
-    sprite.style.left = `${startX}%`;
-    sprite.style.top = '-10vh';
-    sprite.style.fontSize = `${rand(0.9, 1.6)}rem`;
-    sprite.style.color = color;
-    sprite.style.textShadow = `0 0 16px ${color}`;
-    layer.appendChild(sprite);
-
-    const animation = sprite.animate([
-      { top: '-10vh', left: `${startX}%`, opacity: 0, transform: 'translate(-50%, -50%) scale(0.85)' },
-      { top: '110vh', left: `${endX}%`, opacity: 0.95, transform: `translate(-50%, -50%) rotate(${drift * 2}deg) scale(1.2)` },
-    ], {
-      duration,
-      easing: 'linear',
-      fill: 'forwards',
-    });
-
-    animation.onfinish = () => {
-      sprite.remove();
-      activeAnimations.delete(animation);
-      hideLayerSoon();
-    };
-
-    activeAnimations.add(animation);
-  }
-
-  function sprinkle(themeName) {
-    const layer = setLayerActive(themeName);
-    if (!layer) return;
-    const count = Math.round(rand(MIN_SPRITES, MAX_SPRITES));
-    for (let i = 0; i < count; i += 1) {
-      setTimeout(() => spawnSprite(themeName), i * 45);
-    }
-  }
-
-  function triggerBurst(preferredTheme) {
-    const now = Date.now();
-    if (now - lastBurstAt < BURST_COOLDOWN_MS) return;
-    lastBurstAt = now;
-    const themeName = resolveThemeName(preferredTheme);
-    sprinkle(themeName);
-  }
-
-  function handleTriggerActivation(event) {
-    if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    const theme = event.currentTarget?.dataset.tmTheme;
-    triggerBurst(theme);
-  }
-
-  function enhanceTrigger(el) {
-    if (!el || el.dataset.tmBound === '1') return;
-    el.dataset.tmBound = '1';
-    el.classList.add('tm-clickable');
-    if (!el.hasAttribute('tabindex')) {
-      el.setAttribute('tabindex', '0');
-    }
-    if (!el.hasAttribute('role')) {
-      el.setAttribute('role', 'button');
-    }
-    el.addEventListener('click', handleTriggerActivation);
-    el.addEventListener('keydown', handleTriggerActivation);
-  }
-
   function bindTriggers() {
-    if (triggersBound) return;
-    const wire = () => {
-      document.querySelectorAll(TRIGGER_SELECTOR).forEach(enhanceTrigger);
-      triggersBound = true;
-      if (getSeasonalTheme() === WINTER_THEME) {
-        startWinterLoop();
-      }
-    };
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', wire, { once: true });
+    document.querySelectorAll('.tm').forEach(node => {
+      if (node.dataset.tmEggBound === 'true') return;
+      node.dataset.tmEggBound = 'true';
+      node.classList.add('tm-clickable');
+      node.addEventListener('click', handleTmClick);
+    });
+  }
+
+  function handleTmClick() {
+    if (!running) {
+      start();
     } else {
-      wire();
+      boostIntensity();
     }
   }
 
-  function getSeasonalTheme() {
-    const month = new Date().getMonth();
-    if (month === 5) return 'pride';
-    if (month === 9 || month === 10) return 'spooky';
-    if (month === 11) return 'festive';
-    return 'default';
+  function start() {
+    if (running) return;
+    running = true;
+    intensityMultiplier = 1;
+    ensureLayer();
+    spawnBurst(4 * intensityMultiplier);
+    scheduleNextSpawn();
+    tick();
   }
 
-  function startWinterLoop() {
-    if (winterLoopActive) return;
-    winterLoopActive = true;
-    const loop = () => {
-      if (!winterLoopActive) return;
-      const layer = setLayerActive(WINTER_THEME);
-      if (!layer) return;
-      for (let i = 0; i < WINTER_LOOP_BATCH; i += 1) {
-        spawnSprite(WINTER_THEME);
-      }
-      winterLoopTimer = setTimeout(loop, rand(WINTER_LOOP_MIN_DELAY, WINTER_LOOP_MAX_DELAY));
+  function boostIntensity() {
+    intensityMultiplier *= 2;
+    spawnBurst(Math.max(4, Math.round(intensityMultiplier * 2)));
+    if (spawnTimer) {
+      clearTimeout(spawnTimer);
+      scheduleNextSpawn();
+    }
+  }
+
+  function scheduleNextSpawn() {
+    const delayScale = Math.max(1, intensityMultiplier);
+    const minDelay = Math.max(50, spawnMinDelay / delayScale);
+    const maxDelay = Math.max(minDelay + 10, spawnMaxDelay / delayScale);
+    spawnTimer = setTimeout(() => {
+      const batch = Math.max(1, Math.round(intensityMultiplier));
+      spawnBurst(batch);
+      scheduleNextSpawn();
+    }, minDelay + Math.random() * (maxDelay - minDelay));
+  }
+
+  function spawnBurst(count) {
+    for (let i = 0; i < count; i++) {
+      spawnSprite();
+    }
+  }
+
+  function spawnSprite() {
+    if (!layer) ensureLayer();
+    const size = 20 + Math.random() * 26;
+    const theme = getCurrentTmTheme();
+    const sprite = {
+      size,
+      radius: size / 2,
+      x: Math.random() * (window.innerWidth - size) + size / 2,
+      y: -size - Math.random() * 40,
+      vx: (Math.random() - 0.5) * 1.4,
+      vy: Math.random() * -1.5,
+      rotation: Math.random() * 360,
+      spin: (Math.random() - 0.5) * 120,
+      resting: false,
+      supported: false,
     };
-    sprinkle(WINTER_THEME);
-    loop();
+    const el = document.createElement('div');
+    el.className = 'tm-sprite';
+    el.textContent = theme && theme.text ? theme.text : '™';
+    el.style.fontSize = `${size}px`;
+    if (theme) {
+      el.classList.add('tm-themed');
+      if (theme.color) {
+        el.style.color = theme.color;
+      }
+      if (theme.glow) {
+        el.style.textShadow = theme.glow;
+      }
+    }
+    el.style.setProperty('--tm-spin', `${sprite.spin}deg`);
+    layer.appendChild(el);
+    sprite.el = el;
+    sprites.push(sprite);
+    syncSprite(sprite);
+  }
+
+  function syncSprite(sprite) {
+    if (!sprite.el) return;
+    sprite.el.style.left = `${sprite.x}px`;
+    sprite.el.style.top = `${sprite.y}px`;
+    sprite.el.style.transform = `translate(-50%, -50%) rotate(${sprite.rotation}deg)`;
+  }
+
+  function resolveCollisions() {
+    for (let i = 0; i < sprites.length; i++) {
+      for (let j = i + 1; j < sprites.length; j++) {
+        const a = sprites[i];
+        const b = sprites[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 0.0001;
+        const minDist = a.radius + b.radius;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        if (Math.abs(ny) > supportAngleThreshold && dist - minDist <= supportDistanceEpsilon) {
+          if (ny > 0) a.supported = true;
+          if (ny < 0) b.supported = true;
+        }
+        if (dist >= minDist) continue;
+        const overlap = (minDist - dist) / 2;
+        a.x -= nx * overlap;
+        a.y -= ny * overlap;
+        b.x += nx * overlap;
+        b.y += ny * overlap;
+        const relVelX = b.vx - a.vx;
+        const relVelY = b.vy - a.vy;
+        const velAlongNormal = relVelX * nx + relVelY * ny;
+        if (velAlongNormal > 0) continue;
+        const restitution = 0.65;
+        const impulse = -(1 + restitution) * velAlongNormal / 2;
+        const impulseX = impulse * nx;
+        const impulseY = impulse * ny;
+        a.vx -= impulseX;
+        a.vy -= impulseY;
+        b.vx += impulseX;
+        b.vy += impulseY;
+        if (Math.abs(a.vx) > wakeSpeed || Math.abs(a.vy) > wakeSpeed) a.resting = false;
+        if (Math.abs(b.vx) > wakeSpeed || Math.abs(b.vy) > wakeSpeed) b.resting = false;
+        if (ny > supportAngleThreshold) a.supported = true;
+        if (ny < -supportAngleThreshold) b.supported = true;
+      }
+    }
+  }
+
+  function tick() {
+    rafId = requestAnimationFrame(tick);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    sprites.forEach(sprite => {
+      sprite.supported = false;
+      if (!sprite.resting) {
+        sprite.vy += gravity;
+        sprite.vx *= friction;
+        sprite.x += sprite.vx;
+        sprite.y += sprite.vy;
+      }
+      sprite.rotation = (sprite.rotation + sprite.spin * 0.016) % 360;
+      const radius = sprite.radius;
+      if (sprite.x - radius < 0) {
+        sprite.x = radius;
+        sprite.vx *= -bounce;
+      } else if (sprite.x + radius > width) {
+        sprite.x = width - radius;
+        sprite.vx *= -bounce;
+      }
+      if (sprite.y + radius > height) {
+        sprite.y = height - radius;
+        if (!sprite.resting) {
+          sprite.vy *= -bounce;
+        }
+        sprite.supported = true;
+      }
+    });
+    resolveCollisions();
+    sprites.forEach(sprite => {
+      const settledVertically = Math.abs(sprite.vy) < settleThreshold;
+      const settledHorizontally = Math.abs(sprite.vx) < settleThreshold;
+      if (sprite.supported && settledVertically && settledHorizontally) {
+        sprite.vx = 0;
+        sprite.vy = 0;
+        sprite.resting = true;
+      } else if (!sprite.supported && sprite.resting) {
+        sprite.resting = false;
+      }
+    });
+    sprites.forEach(syncSprite);
   }
 
   return {
     bindTriggers,
     getSeasonalTheme,
-    getCurrentTmTheme: () => activeTheme || getSeasonalTheme(),
-    triggerBurst,
-    startWinterLoop,
+    getCurrentTmTheme,
   };
 })();
-
-function closeAddModal() {
-  if (!modalRoot) return;
-  cleanupAddModalForms();
-  modalRoot.innerHTML = '';
-}
-
-function setupAddModal() {
-  const btn = document.getElementById('open-add-modal');
-  if (btn) {
-    btn.addEventListener('click', () => openAddModal());
-  }
-}
-
-function openAddModal(initialListType = null) {
-  if (!modalRoot) return;
-  if (!currentUser) {
-    showAlert('Please sign in to add items.');
-    return;
-  }
-  const templateRoot = document.getElementById('add-form-templates');
-  if (!templateRoot) {
-    showAlert('Add form templates are missing from the page.');
-    return;
-  }
-  closeWheelModal();
-  cleanupAddModalForms();
-  modalRoot.innerHTML = '';
-
-  const storedType = safeLocalStorageGet(LAST_ADD_LIST_TYPE_KEY);
-  const fallbackType = PRIMARY_LIST_TYPES[0];
-  let activeType = PRIMARY_LIST_TYPES.includes(initialListType) ? initialListType
-    : (PRIMARY_LIST_TYPES.includes(storedType) ? storedType : fallbackType);
-  let activeForm = null;
-
-  const backdrop = document.createElement('div');
-  backdrop.className = 'modal-backdrop add-modal-backdrop';
-  const modal = document.createElement('div');
-  modal.className = 'modal add-modal';
-
-  const header = document.createElement('div');
-  header.className = 'modal-header';
-  const title = document.createElement('h3');
-  title.textContent = 'Add Items';
-  const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.className = 'btn ghost';
-  closeBtn.textContent = 'Close';
-  closeBtn.addEventListener('click', () => closeAddModal());
-  header.appendChild(title);
-  header.appendChild(closeBtn);
-
-  const typeSelectLabel = document.createElement('label');
-  typeSelectLabel.className = 'small';
-  typeSelectLabel.textContent = 'Choose list';
-  const typeSelect = document.createElement('select');
-  typeSelect.className = 'add-modal-type-select';
-  PRIMARY_LIST_TYPES.forEach(type => {
-    const option = document.createElement('option');
-    option.value = type;
-    option.textContent = MEDIA_TYPE_LABELS[type] || type;
-    if (type === activeType) option.selected = true;
-    typeSelect.appendChild(option);
-  });
-  typeSelect.addEventListener('change', () => {
-    const selected = typeSelect.value;
-    if (!PRIMARY_LIST_TYPES.includes(selected)) return;
-    activeType = selected;
-    safeLocalStorageSet(LAST_ADD_LIST_TYPE_KEY, selected);
-    renderForm(selected);
-  });
-
-  const intro = document.createElement('p');
-  intro.className = 'small';
-  intro.textContent = 'Search for a title to auto-fill metadata, then tweak any fields before saving.';
-
-  const selectRow = document.createElement('div');
-  selectRow.className = 'add-modal-select-row';
-  selectRow.appendChild(typeSelectLabel);
-  selectRow.appendChild(typeSelect);
-
-  const formHost = document.createElement('div');
-  formHost.className = 'add-modal-form-host';
-
-  function renderForm(targetType) {
-    if (activeForm) {
-      teardownFormAutocomplete(activeForm);
-    }
-    formHost.innerHTML = '';
-    const template = templateRoot.querySelector(`template[data-list="${targetType}"]`);
-    if (!template) {
-      const missing = document.createElement('p');
-      missing.className = 'small';
-      missing.textContent = 'Unable to load form template for this list.';
-      formHost.appendChild(missing);
-      activeForm = null;
-      return;
-    }
-    const fragment = template.content.cloneNode(true);
-    const panel = fragment.querySelector('.add-panel');
-    if (panel) {
-      panel.classList.remove('sr-only');
-    }
-    const form = fragment.querySelector('form');
-    if (!form) {
-      formHost.appendChild(fragment);
-      activeForm = null;
-      return;
-    }
-    form.dataset.addForm = 'true';
-    form.addEventListener('submit', (ev) => {
-      ev.preventDefault();
-      addItemFromForm(targetType, form);
-    });
-    setupFormAutocomplete(form, targetType);
-    formHost.appendChild(fragment);
-    activeForm = form;
-  }
-
-  renderForm(activeType);
-
-  const body = document.createElement('div');
-  body.className = 'modal-body add-modal-body';
-  body.appendChild(intro);
-  body.appendChild(selectRow);
-  body.appendChild(formHost);
-
-  modal.appendChild(header);
-  modal.appendChild(body);
-  backdrop.appendChild(modal);
-  backdrop.addEventListener('click', (ev) => {
-    if (ev.target === backdrop) {
-      closeAddModal();
-    }
-  });
-  modalRoot.appendChild(backdrop);
-}
-
-function cleanupAddModalForms() {
-  if (!modalRoot) return;
-  modalRoot.querySelectorAll('form[data-add-form="true"]').forEach(form => {
-    teardownFormAutocomplete(form);
-  });
-}
 
 function logAppVersionOnce() {
   const flagKey = '__THE_LIST_VERSION_LOGGED__';
@@ -559,21 +428,7 @@ function initFirebase() {
   signOutBtn.addEventListener('click', () => signOut());
 
   setupAddModal();
-  initWheelModal({
-    modalRoot,
-    closeAddModal,
-    listCaches,
-    getCurrentUser: () => currentUser,
-    getDb: () => db,
-    primaryListTypes: PRIMARY_LIST_TYPES,
-    listSupportsActorFilter,
-    getActorFilterValue,
-    matchesActorFilter,
-    isCollapsibleList,
-    buildCollapsibleMovieCard,
-    buildStandardCard,
-    parseSeriesOrder,
-  });
+  setupWheelModal();
 
   document.querySelectorAll('[data-role="actor-filter"]').forEach(input => {
     const listType = input.dataset.list;
@@ -605,6 +460,248 @@ function initFirebase() {
   }
 }
 
+function setupAddModal() {
+  if (!addModalTrigger || !modalRoot) return;
+  addModalTrigger.addEventListener('click', () => openAddModal());
+}
+
+function openAddModal(initialType = PRIMARY_LIST_TYPES[0]) {
+  if (!modalRoot) return;
+  const defaultType = PRIMARY_LIST_TYPES.includes(initialType) ? initialType : PRIMARY_LIST_TYPES[0];
+  closeAddModal();
+  closeWheelModal();
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop add-item-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal add-item-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', 'Add new item');
+
+  const header = document.createElement('div');
+  header.className = 'add-modal-header';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Add New Item';
+  header.appendChild(heading);
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'btn ghost close-add-modal';
+  closeBtn.textContent = 'Close';
+  closeBtn.addEventListener('click', () => closeAddModal());
+  header.appendChild(closeBtn);
+
+  const blurb = document.createElement('p');
+  blurb.className = 'small';
+  blurb.textContent = 'Pick a media type to fill out its details.';
+
+  const tabs = document.createElement('div');
+  tabs.className = 'add-type-tabs';
+  const tabButtons = new Map();
+  PRIMARY_LIST_TYPES.forEach(type => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'add-type-tab';
+    button.dataset.type = type;
+    button.textContent = MEDIA_TYPE_LABELS[type] || type;
+    button.setAttribute('aria-pressed', 'false');
+    button.addEventListener('click', () => setActiveAddModalType(type));
+    tabs.appendChild(button);
+    tabButtons.set(type, button);
+  });
+
+  const formHost = document.createElement('div');
+  formHost.className = 'add-modal-form';
+
+  modal.appendChild(header);
+  modal.appendChild(blurb);
+  modal.appendChild(tabs);
+  modal.appendChild(formHost);
+  backdrop.appendChild(modal);
+  modalRoot.innerHTML = '';
+  modalRoot.appendChild(backdrop);
+
+  const keyHandler = (event) => {
+    if (event.key === 'Escape') {
+      closeAddModal();
+    }
+  };
+  backdrop.addEventListener('click', (event) => {
+    if (event.target === backdrop) {
+      closeAddModal();
+    }
+  });
+  document.addEventListener('keydown', keyHandler);
+
+  activeAddModal = {
+    backdrop,
+    modal,
+    formHost,
+    tabButtons,
+    keyHandler,
+    currentForm: null,
+    activeType: null,
+  };
+
+  setActiveAddModalType(defaultType);
+}
+
+function closeAddModal() {
+  if (!activeAddModal) {
+    if (modalRoot) {
+      modalRoot.innerHTML = '';
+    }
+    return;
+  }
+  destroyActiveAddModalForm();
+  if (activeAddModal.keyHandler) {
+    document.removeEventListener('keydown', activeAddModal.keyHandler);
+  }
+  if (modalRoot) {
+    modalRoot.innerHTML = '';
+  }
+  activeAddModal = null;
+}
+
+function destroyActiveAddModalForm() {
+  if (!activeAddModal || !activeAddModal.currentForm) return;
+  teardownFormAutocomplete(activeAddModal.currentForm);
+  activeAddModal.currentForm = null;
+}
+
+function setActiveAddModalType(listType) {
+  if (!activeAddModal) return;
+  const targetType = PRIMARY_LIST_TYPES.includes(listType) ? listType : PRIMARY_LIST_TYPES[0];
+  const template = addFormTemplateMap[targetType];
+  if (!template) return;
+
+  destroyActiveAddModalForm();
+  activeAddModal.formHost.innerHTML = '';
+  const fragment = template.content.cloneNode(true);
+  activeAddModal.formHost.appendChild(fragment);
+  const form = activeAddModal.formHost.querySelector('form');
+  if (form) {
+    setupFormAutocomplete(form, targetType);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await addItemFromForm(targetType, form);
+    });
+    activeAddModal.currentForm = form;
+  }
+  activeAddModal.activeType = targetType;
+
+  activeAddModal.tabButtons.forEach((button, type) => {
+    if (!button) return;
+    if (type === targetType) {
+      button.classList.add('active');
+      button.setAttribute('aria-pressed', 'true');
+    } else {
+      button.classList.remove('active');
+      button.setAttribute('aria-pressed', 'false');
+    }
+  });
+}
+
+function setupWheelModal() {
+  if (!wheelModalTrigger || !wheelModalTemplate || !modalRoot) return;
+  wheelModalTrigger.addEventListener('click', () => openWheelModal());
+}
+
+function openWheelModal() {
+  if (!wheelModalTemplate || !modalRoot) return;
+  closeAddModal();
+  closeWheelModal();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop wheel-modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal wheel-modal';
+  const fragment = wheelModalTemplate.content.cloneNode(true);
+  modal.appendChild(fragment);
+  backdrop.appendChild(modal);
+  modalRoot.innerHTML = '';
+  modalRoot.appendChild(backdrop);
+
+  const sourceSelect = modal.querySelector('[data-wheel-source]');
+  const spinButton = modal.querySelector('[data-wheel-spin]');
+  const spinnerEl = modal.querySelector('[data-wheel-spinner]');
+  const resultEl = modal.querySelector('[data-wheel-result]');
+  const closeBtn = modal.querySelector('[data-wheel-close]');
+
+  wheelSourceSelect = sourceSelect || null;
+  wheelSpinnerEl = spinnerEl || null;
+  wheelResultEl = resultEl || null;
+  if (wheelSpinnerEl) {
+    wheelSpinnerEl.classList.add('hidden');
+    wheelSpinnerEl.classList.remove('spinning');
+    wheelSpinnerEl.innerHTML = '';
+  }
+  if (wheelResultEl) {
+    wheelResultEl.innerHTML = '';
+  }
+
+  const spinHandler = () => {
+    if (!wheelSourceSelect) return;
+    spinWheel(wheelSourceSelect.value);
+  };
+  if (spinButton) {
+    spinButton.addEventListener('click', spinHandler);
+  }
+
+  const closeHandler = () => closeWheelModal();
+  if (closeBtn) {
+    closeBtn.addEventListener('click', closeHandler);
+  }
+
+  const backdropHandler = (event) => {
+    if (event.target === backdrop) {
+      closeWheelModal();
+    }
+  };
+  backdrop.addEventListener('click', backdropHandler);
+
+  const keyHandler = (event) => {
+    if (event.key === 'Escape') {
+      closeWheelModal();
+    }
+  };
+  document.addEventListener('keydown', keyHandler);
+
+  wheelModalState = {
+    backdrop,
+    modal,
+    spinButton,
+    spinHandler,
+    closeBtn,
+    closeHandler,
+    backdropHandler,
+    keyHandler,
+  };
+}
+
+function closeWheelModal() {
+  if (wheelModalState) {
+    if (wheelModalState.spinButton && wheelModalState.spinHandler) {
+      wheelModalState.spinButton.removeEventListener('click', wheelModalState.spinHandler);
+    }
+    if (wheelModalState.closeBtn && wheelModalState.closeHandler) {
+      wheelModalState.closeBtn.removeEventListener('click', wheelModalState.closeHandler);
+    }
+    if (wheelModalState.backdrop && wheelModalState.backdropHandler) {
+      wheelModalState.backdrop.removeEventListener('click', wheelModalState.backdropHandler);
+    }
+    if (wheelModalState.keyHandler) {
+      document.removeEventListener('keydown', wheelModalState.keyHandler);
+    }
+    if (wheelModalState.backdrop && wheelModalState.backdrop.parentNode) {
+      wheelModalState.backdrop.parentNode.removeChild(wheelModalState.backdrop);
+    }
+  }
+  clearWheelAnimation();
+  wheelModalState = null;
+  wheelSourceSelect = null;
+  wheelSpinnerEl = null;
+  wheelResultEl = null;
+}
 
 // Prompt user to add missing collection parts
 function promptAddMissingCollectionParts(listType, collInfo, currentItem, keywordContext = null) {
@@ -947,46 +1044,69 @@ function promptAnimeFranchiseSelection(plan, { rootAniListId, title } = {}) {
   });
 }
 
-function sanitizeFranchiseEntryForNotification(entry, fallbackSeriesName, totalEntries) {
-  if (!entry || !entry.title) return null;
-  return {
-    aniListId: entry.aniListId || null,
-    title: entry.title,
-    year: Number.isFinite(entry.year) ? entry.year : null,
-    format: entry.format || '',
-    episodes: entry.episodes ?? null,
-    duration: entry.duration ?? null,
-    status: entry.status || '',
-    siteUrl: entry.siteUrl || '',
-    cover: entry.cover || '',
-    relationType: entry.relationType || '',
-    depth: Number.isFinite(entry.depth) ? entry.depth : 0,
-    seriesName: entry.seriesName || fallbackSeriesName || '',
-    seriesOrder: entry.seriesOrder ?? null,
-    seriesSize: Number.isFinite(entry.seriesSize) ? entry.seriesSize : (Number.isFinite(totalEntries) ? totalEntries : null),
+function pushNotification({ title, message, duration = 9000 } = {}) {
+  if (!title && !message) return;
+  if (!notificationCenter) {
+    const fallbackText = [title, message].filter(Boolean).join('\n');
+    if (fallbackText) alert(fallbackText);
+    return;
+  }
+  const card = document.createElement('div');
+  card.className = 'notification-card';
+  if (title) {
+    const titleEl = document.createElement('div');
+    titleEl.className = 'notification-title';
+    titleEl.textContent = title;
+    card.appendChild(titleEl);
+  }
+  if (message) {
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'notification-body';
+    bodyEl.textContent = message;
+    card.appendChild(bodyEl);
+  }
+  const footer = document.createElement('div');
+  footer.className = 'notification-footer';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'notification-close';
+  closeBtn.textContent = 'Dismiss';
+  footer.appendChild(closeBtn);
+  card.appendChild(footer);
+
+  notificationCenter.appendChild(card);
+  requestAnimationFrame(() => card.classList.add('visible'));
+
+  let dismissed = false;
+  let timerId = null;
+
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    card.classList.remove('visible');
+    setTimeout(() => {
+      if (card.parentNode) card.parentNode.removeChild(card);
+    }, 240);
   };
+
+  timerId = setTimeout(dismiss, Math.max(4000, duration));
+
+  card.addEventListener('mouseenter', () => {
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+  });
+  card.addEventListener('mouseleave', () => {
+    if (!dismissed && !timerId) {
+      timerId = setTimeout(dismiss, 2500);
+    }
+  });
+
+  closeBtn.addEventListener('click', dismiss);
 }
 
-function buildAnimeNotificationActionPayload(seriesName, missingEntries, context = {}) {
-  if (!Array.isArray(missingEntries) || missingEntries.length === 0) return null;
-  const derivedSeriesName = seriesName || context?.plan?.seriesName || '';
-  const planEntries = Array.isArray(context?.plan?.entries) ? context.plan.entries : null;
-  const totalEntries = Number.isFinite(context?.plan?.totalEntries)
-    ? context.plan.totalEntries
-    : (planEntries ? planEntries.length : missingEntries.length);
-  const entries = missingEntries
-    .map(entry => sanitizeFranchiseEntryForNotification(entry, derivedSeriesName, totalEntries))
-    .filter(Boolean);
-  if (!entries.length) return null;
-  return {
-    rootAniListId: context.rootAniListId || null,
-    totalEntries,
-    seriesName: derivedSeriesName,
-    entries,
-  };
-}
-
-function showAnimeFranchiseNotification(seriesName, missingEntries, context = {}) {
+function showAnimeFranchiseNotification(seriesName, missingEntries) {
   if (!Array.isArray(missingEntries) || missingEntries.length === 0) return;
   const sampleTitles = missingEntries
     .map(entry => entry && entry.title)
@@ -1002,95 +1122,10 @@ function showAnimeFranchiseNotification(seriesName, missingEntries, context = {}
   }
   const summary = segments.join(' | ');
   const body = summary
-    ? `${summary} ready to add from MyAnimeList. Use the button below to drop them straight into your anime list.`
-    : 'New related entries are available on MyAnimeList. Use the button below to add them directly.';
+    ? `${summary} ready to add from MyAnimeList. Use the anime Add form to pull them in.`
+    : 'New related entries are available on MyAnimeList. Use the anime Add form to pull them in.';
   const heading = seriesName ? `New entries for ${seriesName}` : 'New anime entries found';
-  const actionPayload = buildAnimeNotificationActionPayload(seriesName, missingEntries, context);
-  pushNotification({
-    title: heading,
-    message: body,
-    actionLabel: actionPayload ? 'Add to anime list' : '',
-    actionType: actionPayload ? 'anime-franchise-add' : '',
-    actionPayload,
-  });
-}
-
-function handleNotificationActionEvent(event) {
-  const detail = event && event.detail ? event.detail : null;
-  if (!detail || !detail.actionType) return;
-  if (!currentUser) {
-    showAlert('Sign in to manage notifications first.');
-    return;
-  }
-  if (detail.actionType === 'anime-franchise-add') {
-    handleAnimeNotificationAction(detail);
-  }
-}
-
-async function handleAnimeNotificationAction(detail) {
-  const payload = detail && detail.payload ? detail.payload : null;
-  if (!payload || !Array.isArray(payload.entries) || !payload.entries.length) {
-    showAlert('Nothing left to add from that notification.');
-    return;
-  }
-  const notificationId = detail.id || null;
-  if (notificationId && notificationActionsInflight.has(notificationId)) {
-    return;
-  }
-  if (notificationId) {
-    notificationActionsInflight.add(notificationId);
-  }
-  const sanitizedEntries = payload.entries
-    .map(entry => sanitizeFranchiseEntryForNotification(entry, payload.seriesName, payload.totalEntries))
-    .filter(Boolean);
-  if (!sanitizedEntries.length) {
-    showAlert('Those entries can no longer be imported.');
-    if (notificationId) notificationActionsInflight.delete(notificationId);
-    return;
-  }
-  const selectionIds = sanitizedEntries
-    .map(entry => entry && entry.aniListId)
-    .filter(Boolean)
-    .map(id => String(id));
-  if (!selectionIds.length) {
-    showAlert('Missing AniList IDs for those entries, so they cannot be auto-added yet.');
-    if (notificationId) notificationActionsInflight.delete(notificationId);
-    return;
-  }
-  const plan = {
-    seriesName: payload.seriesName || '',
-    entries: sanitizedEntries,
-    totalEntries: payload.totalEntries ?? (sanitizedEntries[0] && sanitizedEntries[0].seriesSize) ?? sanitizedEntries.length,
-  };
-  try {
-    const addedCount = await autoAddAnimeFranchiseEntries(plan, payload.rootAniListId, selectionIds);
-    if (notificationId) {
-      document.dispatchEvent(new CustomEvent(NOTIFICATION_ACTION_SUCCESS_EVENT, { detail: { id: notificationId } }));
-    }
-    const title = plan.seriesName || 'Anime list updated';
-    if (typeof addedCount === 'number' && addedCount > 0) {
-      pushNotification({
-        title,
-        message: `Added ${addedCount} ${addedCount === 1 ? 'entry' : 'entries'} from that notification.`,
-        duration: 6500,
-        persist: false,
-      });
-    } else {
-      pushNotification({
-        title,
-        message: 'Those entries were already on your list.',
-        duration: 5500,
-        persist: false,
-      });
-    }
-  } catch (err) {
-    console.error('Unable to auto-add franchise entries from notification', err);
-    showAlert('Unable to add those entries right now. Please try again.');
-  } finally {
-    if (notificationId) {
-      notificationActionsInflight.delete(notificationId);
-    }
-  }
+  pushNotification({ title: heading, message: body });
 }
 
 function loadAnimeFranchiseIgnoredIds() {
@@ -1146,7 +1181,7 @@ function shouldFallbackToRedirect(err) {
 async function signInWithGoogle() {
   if (!auth) {
     console.warn('Tried to sign in before Firebase was initialized.');
-    showAlert('App is still loading. Please try again.');
+    alert('App is still loading. Please try again.');
     return;
   }
   try {
@@ -1159,12 +1194,12 @@ async function signInWithGoogle() {
         return;
       } catch (redirectErr) {
         console.error('Redirect fallback failed', redirectErr);
-        showAlert('Google sign-in redirect failed. Please try again.');
+        alert('Google sign-in redirect failed. Please try again.');
         return;
       }
     }
     console.error('Google sign-in failed', err);
-    showAlert('Google sign-in failed. Please try again.');
+    alert('Google sign-in failed. Please try again.');
   }
 }
 
@@ -1194,7 +1229,7 @@ async function handleSignInRedirectResult() {
     if (err && err.code === 'auth/no-auth-event') return;
     if (err && err.code === 'auth/redirect-cancelled-by-user') return;
     console.error('Google redirect sign-in failed', err);
-    showAlert('Google sign-in failed after redirect. Please try again.');
+    alert('Google sign-in failed after redirect. Please try again.');
   }
 }
 
@@ -1205,7 +1240,6 @@ function showLogin() {
   introPlayed = false;
   safeStorageRemove(INTRO_SESSION_KEY);
   resetFilterState();
-   clearUnifiedLoadingState();
   updateBackToTopVisibility();
 }
 
@@ -1213,7 +1247,6 @@ function showAppForUser(user) {
   loginScreen.classList.add('hidden');
   appRoot.classList.remove('hidden');
   userNameEl.textContent = user.displayName || user.email || 'You';
-  clearUnifiedLoadingState();
   updateBackToTopVisibility();
   playTheListIntro();
   loadPrimaryLists();
@@ -1224,66 +1257,33 @@ function loadPrimaryLists() {
 }
 
 function initUnifiedLibraryControls() {
-  refreshTypeFilterButtons();
   if (unifiedSearchInput) {
     unifiedSearchInput.addEventListener('input', debounce((ev) => {
       unifiedFilters.search = (ev.target.value || '').trim().toLowerCase();
       renderUnifiedLibrary();
     }, 180));
   }
-  bindTypeFilterDelegation();
+  typeFilterButtons.forEach(btn => {
+    const type = btn.dataset.typeToggle;
+    btn.addEventListener('click', () => toggleUnifiedTypeFilter(type));
+  });
   updateUnifiedTypeControls();
 }
 
-function refreshTypeFilterButtons() {
-  typeFilterButtons = Array.from(document.querySelectorAll('[data-type-toggle]'));
-  return typeFilterButtons;
-}
-
-function bindTypeFilterDelegation() {
-  if (typeFilterDelegationBound) return;
-  document.addEventListener('click', handleTypeFilterTrigger);
-  typeFilterDelegationBound = true;
-}
-
-function handleTypeFilterTrigger(event) {
-  const btn = event.target.closest('[data-type-toggle]');
-  if (!btn || btn.disabled) return;
-  const type = btn.dataset.typeToggle;
-  if (!type) return;
-  if (!typeFilterButtons.includes(btn)) {
-    refreshTypeFilterButtons();
-  }
-  toggleUnifiedTypeFilter(type, event);
-}
-
-function toggleUnifiedTypeFilter(listType, event = null) {
+function toggleUnifiedTypeFilter(listType) {
   if (!listType) return;
-  const wantsExclusive = !!(event && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey));
-  if (wantsExclusive) {
-    const isAlreadySolo = unifiedFilters.types.size === 1 && unifiedFilters.types.has(listType);
-    unifiedFilters.types = isAlreadySolo
-      ? new Set(PRIMARY_LIST_TYPES)
-      : new Set([listType]);
+  const filters = unifiedFilters.types;
+  if (filters.has(listType)) {
+    if (filters.size === 1) return; // always keep at least one type active
+    filters.delete(listType);
   } else {
-    const next = new Set(unifiedFilters.types);
-    if (next.has(listType)) {
-      if (next.size === 1) return;
-      next.delete(listType);
-    } else {
-      next.add(listType);
-    }
-    unifiedFilters.types = next;
+    filters.add(listType);
   }
   updateUnifiedTypeControls();
   renderUnifiedLibrary();
 }
 
 function updateUnifiedTypeControls() {
-  if (!typeFilterButtons || !typeFilterButtons.length) {
-    refreshTypeFilterButtons();
-  }
-  if (!typeFilterButtons.length) return;
   typeFilterButtons.forEach(btn => {
     const type = btn.dataset.typeToggle;
     const isActive = !!(type && unifiedFilters.types.has(type));
@@ -1300,10 +1300,7 @@ function resetUnifiedFilters() {
 }
 
 function playTheListIntro() {
-  if (introPlayed || safeStorageGet(INTRO_SESSION_KEY) === '1') {
-    introPlayed = true;
-    return;
-  }
+  if (introPlayed) return;
   const intro = document.getElementById('the-list-intro');
   if (!intro) return;
   introPlayed = true;
@@ -1374,342 +1371,10 @@ function detachAllListeners() {
   Object.keys(listeners).forEach(k => delete listeners[k]);
 }
 
-function renderList(listType, data) {
-  listCaches[listType] = data || {};
-  try {
-    console.log('[Unified] cache updated', listType, Object.keys(listCaches[listType]).length);
-  } catch (_) {}
-  renderUnifiedLibrary();
-  renderGlobalLibrarySummary();
-}
-
-function teardownUnifiedVirtualizer() {
-  if (unifiedVirtualObserver) {
-    unifiedVirtualObserver.disconnect();
-    unifiedVirtualObserver = null;
-  }
-  unifiedVirtualRecords = [];
-  unifiedRenderedPlaceholderMap = new WeakMap();
-  releaseUnifiedVisibilityFallback();
-}
-
-function buildUnifiedCardNode(record) {
-  if (!record) return document.createDocumentFragment();
-  if (record.isCollapsible) {
-    return buildCollapsibleMovieCard(record.listType, record.cardId, record.item, record.positionIndex, {
-      displayEntryId: record.entryId,
-    });
-  }
-  return buildStandardCard(record.listType, record.cardId, record.item);
-}
-
-function syncPlaceholderExpandedState(card) {
-  if (!card) return;
-  const placeholder = card.closest('.unified-card-placeholder');
-  if (!placeholder) return;
-  placeholder.classList.toggle('expanded-host', card.classList.contains('expanded'));
-}
-
-function createUnifiedCardPlaceholder(index) {
-  const placeholder = document.createElement('div');
-  placeholder.className = 'unified-card-placeholder';
-  placeholder.dataset.index = String(index);
-  placeholder.style.minHeight = `${UNIFIED_PLACEHOLDER_MIN_HEIGHT}px`;
-  placeholder.textContent = 'Loading entry…';
-  return placeholder;
-}
-
-function ensureUnifiedPlaceholderRendered(placeholder) {
-  if (!placeholder || placeholder.dataset.rendered === '1') return;
-  const index = Number(placeholder.dataset.index);
-  const record = unifiedVirtualRecords[index];
-  if (!record) return;
-  try {
-    if (!placeholder.dataset.logReported) {
-      console.log('[Unified] rendering placeholder', index, record.item?.title || record.cardId);
-      placeholder.dataset.logReported = '1';
-    }
-  } catch (_) {}
-  const node = buildUnifiedCardNode(record);
-  placeholder.innerHTML = '';
-  placeholder.appendChild(node);
-  placeholder.dataset.rendered = '1';
-  placeholder.style.minHeight = '';
-  placeholder.classList.add('rendered');
-  placeholder.textContent = '';
-  unifiedRenderedPlaceholderMap.set(placeholder, node);
-  const cardNode = placeholder.querySelector('.card');
-  if (cardNode) {
-    syncPlaceholderExpandedState(cardNode);
-  }
-}
-
-function releaseUnifiedPlaceholder(placeholder) {
-  if (!placeholder || placeholder.dataset.rendered !== '1') return;
-  const node = unifiedRenderedPlaceholderMap.get(placeholder);
-  if (node && node.parentNode === placeholder) {
-    placeholder.removeChild(node);
-  }
-  if (placeholder.dataset.logReported) {
-    try {
-      console.log('[Unified] releasing placeholder', placeholder.dataset.index);
-    } catch (_) {}
-  }
-  placeholder.dataset.rendered = '0';
-  placeholder.style.minHeight = `${UNIFIED_PLACEHOLDER_MIN_HEIGHT}px`;
-  placeholder.textContent = 'Loading entry…';
-  placeholder.classList.remove('rendered', 'expanded-host');
-  unifiedRenderedPlaceholderMap.delete(placeholder);
-}
-
-function scheduleUnifiedVisibilityCheck() {
-  if (unifiedVisibilityFallbackRaf) return;
-  unifiedVisibilityFallbackRaf = requestAnimationFrame(() => {
-    unifiedVisibilityFallbackRaf = 0;
-    runUnifiedVisibilityCheck();
-  });
-}
-
-function ensureUnifiedVisibilityFallback() {
-  if (unifiedVisibilityFallbackBound) return;
-  unifiedVisibilityFallbackHandler = () => scheduleUnifiedVisibilityCheck();
-  window.addEventListener('scroll', unifiedVisibilityFallbackHandler, { passive: true });
-  window.addEventListener('resize', unifiedVisibilityFallbackHandler);
-  document.addEventListener('visibilitychange', unifiedVisibilityFallbackHandler);
-  unifiedVisibilityFallbackBound = true;
-}
-
-function releaseUnifiedVisibilityFallback() {
-  if (!unifiedVisibilityFallbackBound) return;
-  if (unifiedVisibilityFallbackHandler) {
-    window.removeEventListener('scroll', unifiedVisibilityFallbackHandler);
-    window.removeEventListener('resize', unifiedVisibilityFallbackHandler);
-    document.removeEventListener('visibilitychange', unifiedVisibilityFallbackHandler);
-  }
-  if (unifiedVisibilityFallbackRaf) {
-    cancelAnimationFrame(unifiedVisibilityFallbackRaf);
-    unifiedVisibilityFallbackRaf = 0;
-  }
-  unifiedVisibilityFallbackHandler = null;
-  unifiedVisibilityFallbackBound = false;
-}
-
-function runUnifiedVisibilityCheck() {
-  if (!unifiedVirtualRecords || !unifiedVirtualRecords.length) return;
-  const container = document.getElementById('combined-list');
-  if (!container) return;
-  const placeholders = container.querySelectorAll('.unified-card-placeholder');
-  if (!placeholders.length) return;
-  const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
-  const viewportTop = scrollY - UNIFIED_VIEWPORT_BUFFER_PX;
-  const viewportBottom = scrollY + (window.innerHeight || document.documentElement.clientHeight || 0) + UNIFIED_VIEWPORT_BUFFER_PX;
-  placeholders.forEach(placeholder => {
-    if (!placeholder || placeholder.dataset.rendered === '1') return;
-    const rect = placeholder.getBoundingClientRect();
-    const top = rect.top + scrollY;
-    const bottom = top + rect.height;
-    if (bottom >= viewportTop && top <= viewportBottom) {
-      ensureUnifiedPlaceholderRendered(placeholder);
-    }
-  });
-}
-
-function primeInitialUnifiedPlaceholders(grid) {
-  if (!grid) return;
-  const placeholders = Array.from(grid.querySelectorAll('.unified-card-placeholder')).slice(0, UNIFIED_INITIAL_RENDER_COUNT);
-  placeholders.forEach(ensureUnifiedPlaceholderRendered);
-  try {
-    const renderedCount = placeholders.filter(p => p.dataset.rendered === '1').length;
-    console.log('[Unified] prime rendered', renderedCount);
-  } catch (_) {}
-  scheduleUnifiedVisibilityCheck();
-}
-
-function setupUnifiedVirtualizer(records, grid) {
-  teardownUnifiedVirtualizer();
-  unifiedVirtualRecords = records;
-  ensureUnifiedVisibilityFallback();
-  unifiedVirtualObserver = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        ensureUnifiedPlaceholderRendered(entry.target);
-      } else {
-        releaseUnifiedPlaceholder(entry.target);
-      }
-    });
-  }, {
-    root: null,
-    rootMargin: `${UNIFIED_VIEWPORT_BUFFER_PX}px 0px`,
-    threshold: 0.01,
-  });
-
-  records.forEach((_, index) => {
-    const placeholder = createUnifiedCardPlaceholder(index);
-    grid.appendChild(placeholder);
-    unifiedVirtualObserver.observe(placeholder);
-  });
-  primeInitialUnifiedPlaceholders(grid);
-}
-
-function renderUnifiedLibrary() {
-  const container = document.getElementById('combined-list');
-  if (!container) return;
-  teardownUnifiedVirtualizer();
-  container.innerHTML = '';
-
-  const records = collectUnifiedRecords();
-  try {
-    console.log('[Unified] render pass', { count: records.length });
-    if (records.length) {
-      console.log('[Unified] first records', records.slice(0, 5));
-    }
-  } catch (_) {}
-  if (!records.length) {
-    container.innerHTML = '<div class="empty-state">No items found.</div>';
-    return;
-  }
-
-  records.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-
-  const combinedGrid = document.createElement('div');
-  combinedGrid.className = 'movies-grid unified-grid';
-  container.appendChild(combinedGrid);
-  setupUnifiedVirtualizer(records, combinedGrid);
-  try {
-    const placeholderCount = combinedGrid.querySelectorAll('.unified-card-placeholder').length;
-    console.log('[Unified] grid mounted', { placeholderCount });
-  } catch (_) {}
-}
-
-function collectUnifiedRecords() {
-  const records = [];
-  PRIMARY_LIST_TYPES.forEach(listType => {
-    const data = listCaches[listType] || {};
-    const totalEntries = Object.keys(data).length;
-    try {
-      console.log('[Unified] evaluating type', listType, { totalEntries });
-    } catch (_) {}
-    const entries = Object.entries(data).filter(([_, item]) => {
-      if (!item) return false;
-      if (unifiedFilters.search) {
-        const title = (item.title || '').toLowerCase();
-        if (!title.includes(unifiedFilters.search)) return false;
-      }
-      return true;
-    });
-    if (!entries.length) return;
-    entries.sort((a, b) => (a[1].title || '').localeCompare(b[1].title || ''));
-
-    if (isCollapsibleList(listType)) {
-      const { displayRecords, leaderMembersByCardId } = prepareCollapsibleRecords(listType, entries);
-      seriesGroups[listType] = leaderMembersByCardId;
-      const typeKeywords = buildListTypeKeywordSet(listType);
-      displayRecords.forEach(record => {
-        if (!cardMatchesBadgeFilters(listType, typeKeywords)) return;
-        const displayItem = record.displayItem || record.item;
-        if (!displayItem) return;
-        const sortKey = (displayItem.title || '').toLowerCase();
-        records.push({
-          listType,
-          cardId: record.id,
-          entryId: record.displayEntryId,
-          item: displayItem,
-          positionIndex: record.index,
-          sortKey,
-          isCollapsible: true,
-        });
-      });
-      return;
-    }
-
-    const typeKeywords = buildListTypeKeywordSet(listType);
-    entries.forEach(([id, item], index) => {
-      if (!item) return;
-      if (!cardMatchesBadgeFilters(listType, typeKeywords)) return;
-      const sortKey = (item.title || '').toLowerCase();
-      records.push({
-        listType,
-        cardId: id,
-        entryId: id,
-        item,
-        positionIndex: index,
-        sortKey,
-        isCollapsible: false,
-      });
-    });
-  });
-  try {
-    console.log('[Unified] collected records', records.length);
-  } catch (_) {}
-  return records;
-}
-
-function collectFallbackKeywordsForList(listType, bucket) {
-  switch (listType) {
-    case 'movies':
-      bucket.add('movie');
-      break;
-    case 'tvShows':
-      bucket.add('tv');
-      bucket.add('series');
-      break;
-    case 'anime':
-      bucket.add('anime');
-      break;
-    case 'books':
-      bucket.add('book');
-      break;
-    default:
-      break;
-  }
-}
-
-function buildListTypeKeywordSet(listType) {
-  const keywords = new Set();
-  collectFallbackKeywordsForList(listType, keywords);
-  return keywords;
-}
-
-function cardMatchesBadgeFilters(listType, badgeKeywords) {
-  const activeFilters = unifiedFilters.types;
-  if (!activeFilters || !activeFilters.size || activeFilters.size === PRIMARY_LIST_TYPES.length) {
-    return true;
-  }
-  const keywords = badgeKeywords || buildListTypeKeywordSet(listType);
-  const hasKeyword = (token) => keywords && keywords.has(token);
-  return Array.from(activeFilters).some(type => {
-    switch (type) {
-      case 'movies':
-        return listType === 'movies' || hasKeyword('movie');
-      case 'tvShows':
-        return listType === 'tvShows' || hasKeyword('tv') || hasKeyword('series');
-      case 'anime':
-        return listType === 'anime' || hasKeyword('anime');
-      case 'books':
-        return listType === 'books' || hasKeyword('book');
-      default:
-        return false;
-    }
-  });
-}
-
-function getListLabel(type) {
-  switch (type) {
-    case 'movies': return 'Movies';
-    case 'tvShows': return 'TV Shows';
-    case 'anime': return 'Anime';
-    case 'books': return 'Books';
-    default: return type;
-  }
-}
-
 // Load list items in real-time
 // listType: movies | tvShows | anime | books
 function loadList(listType) {
   if (!currentUser) return;
-  listInitialLoadState.set(listType, false);
-  refreshUnifiedLoadingIndicator();
-  renderGlobalLibrarySummary();
   const listContainer = document.getElementById(`${listType}-list`);
   if (listContainer) {
     listContainer.innerHTML = 'Loading...';
@@ -1729,17 +1394,11 @@ function loadList(listType) {
     if (listType === 'anime') {
       scheduleAnimeFranchiseScan(data);
     }
-    listInitialLoadState.set(listType, true);
-    renderGlobalLibrarySummary();
-    refreshUnifiedLoadingIndicator();
   }, (err) => {
     console.error('DB read error', err);
     if (listContainer) {
       listContainer.innerHTML = '<div class="small">Unable to load items.</div>';
     }
-    listInitialLoadState.set(listType, true);
-    renderGlobalLibrarySummary();
-    refreshUnifiedLoadingIndicator();
   });
 
   // store unsubscribe
@@ -1761,13 +1420,187 @@ function createEl(tag, classNames = '', options = {}) {
   return node;
 }
 
+// Render list items
+function renderList(listType, data) {
+  listCaches[listType] = data;
+  const container = document.getElementById(`${listType}-list`);
+  if (container) {
+    container.innerHTML = '';
+  }
+
+  const entries = Object.entries(data || {});
+  const supportsActorFilter = listSupportsActorFilter(listType);
+  const filterValue = supportsActorFilter ? getActorFilterValue(listType) : '';
+
+  let filtered = entries;
+  if (filterValue && supportsActorFilter) {
+    filtered = entries.filter(([, item]) => matchesActorFilter(listType, item, filterValue));
+  }
+
+  if (filtered.length === 0) {
+    const message = supportsActorFilter && filterValue
+      ? 'No items match this actor filter yet.'
+      : 'No items yet. Add something!';
+    if (container) {
+      container.innerHTML = '<div class="small">' + message + '</div>';
+    }
+    updateListStats(listType, filtered);
+    renderUnifiedLibrary();
+    return;
+  }
+
+  updateListStats(listType, filtered);
+
+  const mode = sortModes[listType] || 'title';
+  filtered.sort(([, a], [, b]) => {
+    const ta = titleSortKey(a && a.title ? a.title : '');
+    const tb = titleSortKey(b && b.title ? b.title : '');
+    if (mode === 'title') {
+      if (ta < tb) return -1; if (ta > tb) return 1; return 0;
+    }
+    if (mode === 'yearAsc' || mode === 'yearDesc') {
+      const ya = a && a.year ? parseInt(a.year, 10) : 9999;
+      const yb = b && b.year ? parseInt(b.year, 10) : 9999;
+      if (ya !== yb) return mode === 'yearAsc' ? ya - yb : yb - ya;
+      if (ta < tb) return -1; if (ta > tb) return 1; return 0;
+    }
+    if (mode === 'director') {
+      const da = (a && (a.director || a.author || '')).toLowerCase();
+      const db = (b && (b.director || b.author || '')).toLowerCase();
+      if (da && db && da !== db) return da < db ? -1 : 1;
+      if (ta < tb) return -1; if (ta > tb) return 1; return 0;
+    }
+    if (mode === 'series') {
+      const sa = (a && a.seriesName ? a.seriesName : '').toLowerCase();
+      const sb = (b && b.seriesName ? b.seriesName : '').toLowerCase();
+      if (sa && sb && sa !== sb) return sa < sb ? -1 : 1;
+      const oa = parseSeriesOrder(a && a.seriesOrder);
+      const ob = parseSeriesOrder(b && b.seriesOrder);
+      if (oa !== ob) return oa - ob;
+      if (ta < tb) return -1; if (ta > tb) return 1; return 0;
+    }
+    // fallback title
+    if (ta < tb) return -1; if (ta > tb) return 1; return 0;
+  });
+
+  if (isCollapsibleList(listType) && container) {
+    renderCollapsibleMediaGrid(listType, container, filtered);
+  } else if (container) {
+    renderStandardList(container, listType, filtered);
+  }
+
+  if (listType in expandedCards) {
+    updateCollapsibleCardStates(listType);
+  }
+
+  renderUnifiedLibrary();
+}
+
+function renderUnifiedLibrary() {
+  if (!combinedListEl) return;
+  const hasLoadedAny = PRIMARY_LIST_TYPES.some(type => listCaches[type] !== undefined);
+  if (!hasLoadedAny) {
+    combinedListEl.innerHTML = '<div class="small">Loading your library...</div>';
+    return;
+  }
+
+  const unifiedEntries = collectUnifiedEntries();
+  const activeTypes = unifiedFilters.types;
+  let filtered = unifiedEntries.filter(entry => activeTypes.has(entry.listType));
+  const query = unifiedFilters.search;
+  if (query) {
+    filtered = filtered.filter(entry => matchesUnifiedSearch(entry.displayItem, query));
+  }
+
+  filtered.sort((a, b) => {
+    const ta = titleSortKey(a.displayItem?.title || '');
+    const tb = titleSortKey(b.displayItem?.title || '');
+    if (ta < tb) return -1;
+    if (ta > tb) return 1;
+    const ya = Number(a.displayItem?.year) || 9999;
+    const yb = Number(b.displayItem?.year) || 9999;
+    if (ya !== yb) return ya - yb;
+    const idxA = Math.max(PRIMARY_LIST_TYPES.indexOf(a.listType), 0);
+    const idxB = Math.max(PRIMARY_LIST_TYPES.indexOf(b.listType), 0);
+    return idxA - idxB;
+  });
+
+  combinedListEl.innerHTML = '';
+  if (!filtered.length) {
+    combinedListEl.innerHTML = '<div class="small">No entries match the current filters yet.</div>';
+    return;
+  }
+
+  const grid = createEl('div', 'movies-grid unified-grid');
+  filtered.forEach(entry => {
+    const card = buildUnifiedCard(entry);
+    if (card) grid.appendChild(card);
+  });
+  combinedListEl.appendChild(grid);
+}
+
+function collectUnifiedEntries() {
+  const allEntries = [];
+  PRIMARY_LIST_TYPES.forEach(listType => {
+    const cacheEntries = Object.entries(listCaches[listType] || {});
+    if (!cacheEntries.length) return;
+    if (isCollapsibleList(listType)) {
+      const { displayRecords } = prepareCollapsibleRecords(listType, cacheEntries);
+      displayRecords.forEach(record => {
+        allEntries.push({
+          listType,
+          id: record.id,
+          item: record.item,
+          displayItem: record.displayItem,
+          displayEntryId: record.displayEntryId,
+          positionIndex: record.index,
+        });
+      });
+    } else {
+      cacheEntries.forEach(([id, item], index) => {
+        if (!item) return;
+        allEntries.push({
+          listType,
+          id,
+          item,
+          displayItem: item,
+          displayEntryId: id,
+          positionIndex: index,
+        });
+      });
+    }
+  });
+  return allEntries;
+}
+
+function matchesUnifiedSearch(item, query) {
+  if (!query) return true;
+  if (!item) return false;
+  const fields = [
+    item.title,
+    item.notes,
+    item.plot,
+    item.seriesName,
+    item.director,
+    item.author,
+    Array.isArray(item.actors) ? item.actors.join(' ') : item.actors,
+    Array.isArray(item.animeGenres) ? item.animeGenres.join(' ') : item.animeGenres,
+  ];
+  return fields.some(field => field && String(field).toLowerCase().includes(query));
+}
+
+function buildUnifiedCard(entry) {
+  const { listType, id, displayItem, displayEntryId, positionIndex } = entry;
+  if (isCollapsibleList(listType)) {
+    return buildCollapsibleMovieCard(listType, id, displayItem, positionIndex, {
+      displayEntryId,
+    });
+  }
+  return buildStandardCard(listType, id, displayItem);
+}
 
 function isCollapsibleList(listType) {
   return COLLAPSIBLE_LISTS.has(listType);
-}
-
-function supportsWatchProviders(listType) {
-  return WATCH_PROVIDER_LISTS.has(listType);
 }
 
 function listSupportsActorFilter(listType) {
@@ -1858,10 +1691,8 @@ function prepareCollapsibleRecords(listType, entries) {
   return { displayRecords, leaderMembersByCardId, visibleIds };
 }
 
-function renderCollapsibleMediaGrid(listType, container, entries, options = {}) {
-  const inline = Boolean(options.inline);
-  const skipStateSync = Boolean(options.skipStateSync);
-  const grid = inline ? container : createEl('div', 'movies-grid');
+function renderCollapsibleMediaGrid(listType, container, entries) {
+  const grid = createEl('div', 'movies-grid');
   const { displayRecords, leaderMembersByCardId, visibleIds } = prepareCollapsibleRecords(listType, entries);
   seriesGroups[listType] = leaderMembersByCardId;
 
@@ -1872,9 +1703,7 @@ function renderCollapsibleMediaGrid(listType, container, entries, options = {}) 
     }));
   });
 
-  if (!inline) {
-    container.appendChild(grid);
-  }
+  container.appendChild(grid);
 
   const expandedSet = ensureExpandedSet(listType);
   expandedSet.forEach(cardId => {
@@ -1891,9 +1720,7 @@ function renderCollapsibleMediaGrid(listType, container, entries, options = {}) 
     }
   });
 
-  if (!skipStateSync) {
-    updateCollapsibleCardStates(listType);
-  }
+  updateCollapsibleCardStates(listType);
 }
 
 function renderStandardList(container, listType, entries) {
@@ -1969,11 +1796,6 @@ function buildMovieCardInfo(listType, item, context = {}) {
     if (badges) info.appendChild(badges);
   }
 
-  const watchTime = buildWatchTimeChip(listType, context.cardId, item);
-  if (watchTime) {
-    info.appendChild(watchTime);
-  }
-
   return info;
 }
 
@@ -1990,13 +1812,7 @@ function buildAnimeSummaryBadges(item, context = {}) {
     chips.push(`${metrics.movieCount} movie${metrics.movieCount === 1 ? '' : 's'}`);
   }
   if (metrics.totalEpisodes > 0) {
-    const label = listType === 'tvShows'
-      ? `${metrics.totalEpisodes} episode${metrics.totalEpisodes === 1 ? '' : 's'}`
-      : `${metrics.totalEpisodes} ep total`;
-    chips.push(label);
-  }
-  if (listType === 'tvShows' && metrics.seasonCount > 0) {
-    chips.push(`${metrics.seasonCount} season${metrics.seasonCount === 1 ? '' : 's'}`);
+    chips.push(`${metrics.totalEpisodes} ep total`);
   }
   if (metrics.statusLabel) {
     chips.push(formatAnimeStatusLabel(metrics.statusLabel));
@@ -2012,7 +1828,7 @@ function formatAnimeFormatLabel(value) {
   return String(value).replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
-function collectSeriesEntries(listType, cardId, fallbackItem) {
+function deriveAnimeSeriesMetrics(listType, cardId, fallbackItem) {
   const normalizedListType = listType || 'anime';
   let entries = [];
   if (cardId && isCollapsibleList(normalizedListType)) {
@@ -2024,21 +1840,6 @@ function collectSeriesEntries(listType, cardId, fallbackItem) {
   if (!entries.length && fallbackItem) {
     entries = [fallbackItem];
   }
-  return entries;
-}
-
-function extractUnifiedEpisodeCount(entry) {
-  if (!entry) return null;
-  const candidates = [entry.episodeCount, entry.animeEpisodes, entry.episodes];
-  for (const value of candidates) {
-    const num = Number(value);
-    if (Number.isFinite(num) && num > 0) return num;
-  }
-  return null;
-}
-
-function deriveAnimeSeriesMetrics(listType, cardId, fallbackItem) {
-  const entries = collectSeriesEntries(listType, cardId, fallbackItem);
   if (!entries.length) return null;
 
   const formatLabels = new Map();
@@ -2046,7 +1847,6 @@ function deriveAnimeSeriesMetrics(listType, cardId, fallbackItem) {
   let totalEpisodes = 0;
   let bestStatus = '';
   let bestPriority = -1;
-  let seasonCount = 0;
 
   entries.forEach(entry => {
     if (!entry) return;
@@ -2060,13 +1860,9 @@ function deriveAnimeSeriesMetrics(listType, cardId, fallbackItem) {
         movieCount++;
       }
     }
-    const epValue = extractUnifiedEpisodeCount(entry);
-    if (Number.isFinite(epValue)) {
+    const epValue = Number(entry.animeEpisodes || entry.episodes);
+    if (Number.isFinite(epValue) && epValue > 0) {
       totalEpisodes += epValue;
-    }
-    const seasonsValue = Number(entry.tvSeasonCount || entry.seasonCount);
-    if (Number.isFinite(seasonsValue) && seasonsValue > seasonCount) {
-      seasonCount = seasonsValue;
     }
     const status = (entry.animeStatus || entry.status || '').toUpperCase();
     if (status) {
@@ -2082,7 +1878,6 @@ function deriveAnimeSeriesMetrics(listType, cardId, fallbackItem) {
     formatLabels: Array.from(formatLabels.values()),
     movieCount,
     totalEpisodes,
-    seasonCount,
     statusLabel: bestStatus,
   };
 }
@@ -2119,10 +1914,18 @@ function buildMovieCardDetails(listType, cardId, entryId, item) {
     details.appendChild(infoStack);
   }
 
-  if (supportsWatchProviders(listType)) {
-    const watchBlock = buildWatchNowSection(listType, item);
-    if (watchBlock) {
-      details.appendChild(watchBlock);
+  if (item.plot) {
+    details.appendChild(createEl('div', 'plot-summary detail-block', { text: item.plot.trim() }));
+  }
+
+  if (item.notes) {
+    details.appendChild(createEl('div', 'notes detail-block', { text: item.notes }));
+  }
+
+  if (listType === 'anime') {
+    const animeBlock = buildAnimeDetailBlock(item);
+    if (animeBlock) {
+      details.appendChild(animeBlock);
     }
   }
 
@@ -2133,28 +1936,6 @@ function buildMovieCardDetails(listType, cardId, entryId, item) {
     }
   }
 
-  if (item.plot) {
-    details.appendChild(createEl('div', 'plot-summary detail-block', { text: item.plot.trim() }));
-  }
-
-  if (item.notes) {
-    details.appendChild(createEl('div', 'notes detail-block', { text: item.notes }));
-  }
-
-  if (listType === 'tvShows') {
-    const tvBlock = buildTvDetailBlock(listType, cardId, item);
-    if (tvBlock) {
-      details.appendChild(tvBlock);
-    }
-  }
-
-  if (listType === 'anime') {
-    const animeBlock = buildAnimeDetailBlock(item);
-    if (animeBlock) {
-      details.appendChild(animeBlock);
-    }
-  }
-
   details.appendChild(buildMovieCardActions(listType, entryId, item));
   return details;
 }
@@ -2162,44 +1943,15 @@ function buildMovieCardDetails(listType, cardId, entryId, item) {
 function buildAnimeDetailBlock(item) {
   if (!item) return null;
   const block = createEl('div', 'detail-block anime-detail-block');
-  const seasonBreakdown = Array.isArray(item.animeSeasons) && item.animeSeasons.length
-    ? item.animeSeasons
-    : deriveAnimeSeasonBreakdown('anime', null, item);
   const chips = [];
   if (item.animeEpisodes) chips.push(formatAnimeEpisodesLabel(item.animeEpisodes));
   if (item.animeDuration) chips.push(`${item.animeDuration} min/ep`);
   if (item.animeFormat) chips.push(formatAnimeFormatLabel(item.animeFormat));
   if (item.animeStatus) chips.push(formatAnimeStatusLabel(item.animeStatus));
-  const seasonCount = item.animeSeasonCount || seasonBreakdown.length;
-  if (seasonCount) {
-    chips.push(`${seasonCount} season${seasonCount === 1 ? '' : 's'}`);
-  }
   if (chips.length) {
     const row = createEl('div', 'anime-stats-row');
     chips.forEach(text => row.appendChild(createEl('span', 'anime-chip', { text })));
     block.appendChild(row);
-  }
-  if (seasonBreakdown.length) {
-    const seasonBlock = createEl('div', 'season-breakdown');
-    seasonBlock.appendChild(createEl('div', 'season-heading', { text: 'Season Overview' }));
-    const list = createEl('div', 'season-list');
-    seasonBreakdown.forEach(season => {
-      const row = createEl('div', 'season-row');
-      row.appendChild(createEl('div', 'season-label', { text: season.label || 'Season' }));
-      const metaParts = [];
-      if (season.episodes) {
-        metaParts.push(`${season.episodes} ep`);
-      }
-      if (season.title && season.title !== season.label) {
-        metaParts.push(season.title);
-      }
-      if (metaParts.length) {
-        row.appendChild(createEl('div', 'season-meta', { text: metaParts.join(' • ') }));
-      }
-      list.appendChild(row);
-    });
-    seasonBlock.appendChild(list);
-    block.appendChild(seasonBlock);
   }
   if (Array.isArray(item.animeGenres) && item.animeGenres.length) {
     const genres = createEl('div', 'anime-genres', { text: `Genres: ${item.animeGenres.join(', ')}` });
@@ -2211,59 +1963,6 @@ function buildAnimeDetailBlock(item) {
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     block.appendChild(link);
-  }
-  return block.children.length ? block : null;
-}
-
-function buildTvDetailBlock(listType, cardId, item) {
-  if (!item) return null;
-  const block = createEl('div', 'detail-block tv-detail-block');
-  const seasonBreakdown = deriveTvSeasonBreakdown(listType, cardId, item);
-  const chips = [];
-  const seasonCount = item.tvSeasonCount || item.seasonCount || seasonBreakdown.length;
-  if (seasonCount) {
-    chips.push(`${seasonCount} season${seasonCount === 1 ? '' : 's'}`);
-  }
-  const derivedSeasonEpisodes = seasonBreakdown.reduce((sum, season) => {
-    const value = Number(season.episodes);
-    return Number.isFinite(value) ? sum + value : sum;
-  }, 0);
-  const totalEpisodes = item.episodeCount || (derivedSeasonEpisodes || 0);
-  if (totalEpisodes) {
-    chips.push(`${totalEpisodes} episode${totalEpisodes === 1 ? '' : 's'}`);
-  }
-  if (item.episodeRuntime) {
-    chips.push(`${item.episodeRuntime} min/ep`);
-  }
-  if (chips.length) {
-    const row = createEl('div', 'anime-stats-row');
-    chips.forEach(text => row.appendChild(createEl('span', 'anime-chip', { text })));
-    block.appendChild(row);
-  }
-  if (seasonBreakdown.length) {
-    const seasonBlock = createEl('div', 'season-breakdown');
-    seasonBlock.appendChild(createEl('div', 'season-heading', { text: 'Season Overview' }));
-    const list = createEl('div', 'season-list');
-    seasonBreakdown.forEach(season => {
-      const row = createEl('div', 'season-row');
-      row.appendChild(createEl('div', 'season-label', { text: season.label || 'Season' }));
-      const metaParts = [];
-      if (season.episodes !== null && season.episodes !== undefined) {
-        metaParts.push(`${season.episodes} ep`);
-      }
-      if (season.year) {
-        metaParts.push(season.year);
-      }
-      if (season.title && season.title !== season.label) {
-        metaParts.push(season.title);
-      }
-      if (metaParts.length) {
-        row.appendChild(createEl('div', 'season-meta', { text: metaParts.join(' • ') }));
-      }
-      list.appendChild(row);
-    });
-    seasonBlock.appendChild(list);
-    block.appendChild(seasonBlock);
   }
   return block.children.length ? block : null;
 }
@@ -2333,7 +2032,6 @@ function cycleSeriesCard(listType, cardId, delta) {
   const entries = getSeriesGroupEntries(listType, cardId);
   if (!entries || entries.length <= 1) return;
   const state = getSeriesCarouselState(listType, cardId, entries.length);
-  state.followLatest = false;
   const total = entries.length;
   state.index = (state.index + delta + total) % total;
   const entry = entries[state.index];
@@ -2353,14 +2051,13 @@ function cycleSeriesCard(listType, cardId, delta) {
 function resetSeriesCardToFirstEntry(listType, cardId) {
   const entries = getSeriesGroupEntries(listType, cardId);
   if (!entries || !entries.length) return;
-  const latest = pickLatestSeriesEntry(entries) || entries[0];
-  if (!latest || !latest.item) return;
+  const first = entries[0];
+  if (!first || !first.item) return;
   const state = getSeriesCarouselState(listType, cardId, entries.length);
-  state.index = entries.indexOf(latest);
-  state.entryId = latest.id;
-  state.followLatest = true;
+  state.index = 0;
+  state.entryId = first.id;
   const cards = document.querySelectorAll(`.card.collapsible.movie-card[data-list-type="${listType}"][data-id="${cardId}"]`);
-  cards.forEach(card => renderMovieCardContent(card, listType, cardId, latest.item, latest.id));
+  cards.forEach(card => renderMovieCardContent(card, listType, cardId, first.item, first.id));
 }
 
 function buildMovieMetaText(item) {
@@ -2368,7 +2065,6 @@ function buildMovieMetaText(item) {
   if (item.year) metaParts.push(item.year);
   if (item.director) metaParts.push(item.director);
   if (item.runtime) metaParts.push(item.runtime);
-  else if (item.episodeRuntime) metaParts.push(`${item.episodeRuntime} min/ep`);
   else if (item.animeDuration) metaParts.push(`${item.animeDuration} min/ep`);
   if (item.imdbRating) metaParts.push(`IMDb ${item.imdbRating}`);
   return metaParts.join(' • ');
@@ -2435,6 +2131,11 @@ function buildMovieLinks(listType, item) {
     aniList.target = '_blank';
     aniList.rel = 'noopener noreferrer';
     links.appendChild(aniList);
+  }
+  // Inline "Watch Now" next to trailer for movies
+  if (listType === 'movies' && TMDB_API_KEY) {
+    const watchInline = buildWatchNowSection(listType, item, true);
+    if (watchInline) links.appendChild(watchInline);
   }
   return links.children.length ? links : null;
 }
@@ -2605,7 +2306,6 @@ function updateCollapsibleCardStates(listType) {
       ? expandedSet.has(card.dataset.id)
       : expandedSet === card.dataset.id;
     card.classList.toggle('expanded', isMatch);
-    syncPlaceholderExpandedState(card);
   });
 }
 
@@ -2631,7 +2331,7 @@ function getSeriesCarouselState(listType, cardId, entryCount = 0) {
   const store = ensureSeriesCarouselStore(listType);
   let state = store.get(cardId);
   if (!state) {
-    state = { index: 0, followLatest: true };
+    state = { index: 0 };
     store.set(cardId, state);
   }
   if (entryCount && state.index >= entryCount) {
@@ -2658,40 +2358,24 @@ function sortSeriesRecords(records) {
   });
 }
 
-function pickLatestSeriesEntry(entries) {
-  if (!entries || !entries.length) return null;
-  return entries[entries.length - 1] || null;
-}
-
 function resolveSeriesDisplayEntry(listType, leaderId, entries) {
   if (!entries || !entries.length) return null;
   const state = getSeriesCarouselState(listType, leaderId, entries.length);
-  const shouldFollowLatest = state.followLatest !== false;
-  if (shouldFollowLatest) {
-    const latest = pickLatestSeriesEntry(entries);
-    if (latest) {
-      state.index = entries.indexOf(latest);
-      state.entryId = latest.id;
-      state.followLatest = true;
-      return latest;
-    }
-  }
-
   let idx = typeof state.index === 'number' ? state.index : 0;
   if (idx >= entries.length || idx < 0) idx = 0;
   if (state.entryId) {
     const matchIdx = entries.findIndex(entry => entry.id === state.entryId);
     if (matchIdx >= 0) idx = matchIdx;
   }
-  const entry = entries[idx] || pickLatestSeriesEntry(entries) || entries[0];
+  const entry = entries[idx] || entries[0];
   if (entry) {
     state.index = entries.indexOf(entry);
     state.entryId = entry.id;
     return entry;
   }
   state.index = 0;
-  state.entryId = entries[0]?.id;
-  return entries[0] || null;
+  state.entryId = entries[0].id;
+  return entries[0];
 }
 
 function pickSeriesLeader(entries) {
@@ -2728,7 +2412,7 @@ async function addItemFromForm(listType, form) {
   const seriesOrder = listType === 'books' ? null : sanitizeSeriesOrder(seriesOrderRaw);
 
   if (!title) {
-    showAlert('Title is required');
+    alert('Title is required');
     return;
   }
 
@@ -2752,10 +2436,7 @@ async function addItemFromForm(listType, form) {
     let movieCollectionInfo = null;
     if (!metadata && supportsMetadata) {
       if (useAniList) {
-        metadata = await fetchAniListMetadata(
-          { aniListId: selectedAniListId, title, year },
-          { requestSource: 'Add form metadata', notifyOnError: true }
-        );
+        metadata = await fetchAniListMetadata({ aniListId: selectedAniListId, title, year });
       } else if (useGoogleBooks) {
         metadata = await fetchGoogleBooksMetadata({ volumeId: selectedGoogleBookId, title, author: creatorValue, isbn: selectedGoogleIsbn });
       } else if (!hasMetadataProvider) {
@@ -2853,16 +2534,12 @@ async function addItemFromForm(listType, form) {
             }
           }
           item.seriesSize = animeFranchisePlan.entries.length;
-          const seasonEntries = buildAnimeSeasonEntriesFromPlan(animeFranchisePlan);
-          if (seasonEntries.length) {
-            applyAnimeSeasonEntriesToItem(item, seasonEntries);
-          }
         }
       }
     }
 
     if (isDuplicateCandidate(listType, item)) {
-      showAlert("Hey dumbass! It's already in the damn list!");
+      alert("Hey dumbass! It's already in the damn list!");
       return;
     }
 
@@ -2939,7 +2616,7 @@ async function addItemFromForm(listType, form) {
     const message = err && err.message === 'Not signed in'
       ? 'Please sign in to add items.'
       : 'Unable to add item right now. Please try again.';
-    showAlert(message);
+    alert(message);
   } finally {
     setButtonBusy(submitBtn, false);
   }
@@ -3030,18 +2707,6 @@ function sanitizeSeriesOrder(input) {
   const fallback = parseFloat(trimmed.replace(/[^0-9.\-]/g, ''));
   if (Number.isFinite(fallback)) return fallback;
   return trimmed;
-}
-
-function parseSeriesOrder(value) {
-  if (value === null || value === undefined || value === '') {
-    return Number.POSITIVE_INFINITY;
-  }
-  const num = Number(value);
-  if (Number.isFinite(num)) {
-    return num;
-  }
-  const parsed = parseFloat(String(value).replace(/[^0-9.\-]/g, ''));
-  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
 }
 
 function numericSeriesOrder(value) {
@@ -3183,113 +2848,6 @@ function formatRuntimeDuration(totalMinutes) {
   return parts.join(' ');
 }
 
-function resolvePositiveNumber(value) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number') {
-    return Number.isFinite(value) && value > 0 ? value : null;
-  }
-  if (typeof value === 'string') {
-    const match = value.match(/(\d+(?:\.\d+)?)/);
-    if (match) {
-      const parsed = Number(match[1]);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        return parsed;
-      }
-    }
-  }
-  return null;
-}
-
-function extractEpisodeCount(item) {
-  if (!item) return 0;
-  const candidates = [
-    item.episodeCount,
-    item.tvEpisodes,
-    item.animeEpisodes,
-    item.episodes,
-  ];
-  for (const candidate of candidates) {
-    const value = resolvePositiveNumber(candidate);
-    if (value) {
-      return Math.round(value);
-    }
-  }
-  return 0;
-}
-
-function extractEpisodeRuntimeMinutes(item, listType) {
-  if (!item) return 0;
-  const candidates = [
-    item.episodeRuntime,
-    item.tvEpisodeRuntime,
-    item.animeDuration,
-  ];
-  for (const candidate of candidates) {
-    const value = resolvePositiveNumber(candidate);
-    if (value) {
-      return Math.round(value);
-    }
-  }
-  if (listType && listType !== 'movies') {
-    const fallback = parseRuntimeMinutes(item.runtime);
-    if (fallback > 0) {
-      return fallback;
-    }
-  }
-  return 0;
-}
-
-function estimateItemWatchMinutes(listType, item) {
-  if (!item) return 0;
-  if (listType === 'movies') {
-    return parseRuntimeMinutes(item.runtime);
-  }
-  const totalEpisodes = extractEpisodeCount(item);
-  const perEpisodeMinutes = extractEpisodeRuntimeMinutes(item, listType);
-  if (totalEpisodes > 0 && perEpisodeMinutes > 0) {
-    return totalEpisodes * perEpisodeMinutes;
-  }
-  const fallback = parseRuntimeMinutes(item.runtime);
-  return fallback > 0 ? fallback : 0;
-}
-
-function collectWatchTimeEntries(listType, cardId, fallbackItem) {
-  if (cardId && isCollapsibleList(listType)) {
-    const entries = getSeriesGroupEntries(listType, cardId);
-    if (entries && entries.length) {
-      return entries.map(entry => entry && entry.item).filter(Boolean);
-    }
-  }
-  return fallbackItem ? [fallbackItem] : [];
-}
-
-function buildWatchTimeChip(listType, cardId, fallbackItem) {
-  const entries = collectWatchTimeEntries(listType, cardId, fallbackItem);
-  if (!entries.length) return null;
-  let totalMinutes = 0;
-  let totalEpisodes = 0;
-  entries.forEach(entry => {
-    totalMinutes += estimateItemWatchMinutes(listType, entry);
-    totalEpisodes += extractEpisodeCount(entry);
-  });
-  totalMinutes = Math.round(totalMinutes);
-  if (!totalMinutes) return null;
-  const chip = createEl('div', 'watch-time-chip');
-  chip.appendChild(createEl('span', 'watch-time-label', { text: 'Watch time' }));
-  chip.appendChild(createEl('span', 'watch-time-value', { text: formatRuntimeDuration(totalMinutes) }));
-  const metaParts = [];
-  if (listType !== 'movies' && totalEpisodes > 0) {
-    metaParts.push(`${totalEpisodes} episode${totalEpisodes === 1 ? '' : 's'}`);
-  }
-  if (entries.length > 1) {
-    metaParts.push(`${entries.length} entries`);
-  }
-  if (metaParts.length) {
-    chip.appendChild(createEl('span', 'watch-time-meta', { text: `• ${metaParts.join(' • ')}` }));
-  }
-  return chip;
-}
-
 function formatCurrencyShort(value) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount <= 0) return '';
@@ -3387,36 +2945,6 @@ function deriveMetadataAssignments(metadata, existing = {}, options = {}) {
   const runtime = metadata.Runtime && metadata.Runtime !== 'N/A' ? metadata.Runtime : '';
   setField('runtime', runtime);
 
-  const episodeCountValue = metadata.Episodes !== undefined ? metadata.Episodes : (metadata.TotalEpisodes !== undefined ? metadata.TotalEpisodes : undefined);
-  if (episodeCountValue !== undefined && episodeCountValue !== null && episodeCountValue !== '') {
-    const normalizedEpisodes = Number(episodeCountValue);
-    setField('episodeCount', Number.isFinite(normalizedEpisodes) && normalizedEpisodes > 0 ? normalizedEpisodes : episodeCountValue);
-  }
-
-  const seasonCountValue = metadata.Seasons !== undefined ? metadata.Seasons : (metadata.TotalSeasons !== undefined ? metadata.TotalSeasons : undefined);
-  if (seasonCountValue !== undefined && seasonCountValue !== null && seasonCountValue !== '') {
-    const normalizedSeasons = Number(seasonCountValue);
-    setField('seasonCount', Number.isFinite(normalizedSeasons) && normalizedSeasons > 0 ? normalizedSeasons : seasonCountValue);
-  }
-
-  if (metadata.TvSeasonCount !== undefined && metadata.TvSeasonCount !== null && metadata.TvSeasonCount !== '') {
-    const normalizedTvSeasons = Number(metadata.TvSeasonCount);
-    setField('tvSeasonCount', Number.isFinite(normalizedTvSeasons) && normalizedTvSeasons > 0 ? normalizedTvSeasons : metadata.TvSeasonCount);
-  }
-  if (Array.isArray(metadata.TvSeasons) && metadata.TvSeasons.length) {
-    setField('tvSeasons', normalizeTvSeasonEntries(metadata.TvSeasons));
-  }
-
-  const episodeRuntimeValue = metadata.EpisodeRuntime !== undefined ? metadata.EpisodeRuntime : (metadata.RuntimePerEpisode !== undefined ? metadata.RuntimePerEpisode : undefined);
-  if (episodeRuntimeValue !== undefined && episodeRuntimeValue !== null && episodeRuntimeValue !== '') {
-    const runtimeMinutes = parseRuntimeMinutes(episodeRuntimeValue);
-    if (runtimeMinutes > 0) {
-      setField('episodeRuntime', runtimeMinutes);
-    } else if (typeof episodeRuntimeValue === 'number' && Number.isFinite(episodeRuntimeValue) && episodeRuntimeValue > 0) {
-      setField('episodeRuntime', episodeRuntimeValue);
-    }
-  }
-
   const poster = metadata.Poster && metadata.Poster !== 'N/A' ? metadata.Poster : '';
   setField('poster', poster);
 
@@ -3469,9 +2997,6 @@ function deriveMetadataAssignments(metadata, existing = {}, options = {}) {
   if (metadata.AnimeStatus) {
     setField('animeStatus', metadata.AnimeStatus);
   }
-  if (metadata.Status) {
-    setField('status', metadata.Status);
-  }
   if (Array.isArray(metadata.AnimeGenres) && metadata.AnimeGenres.length) {
     setField('animeGenres', metadata.AnimeGenres);
   }
@@ -3522,6 +3047,107 @@ function deriveMetadataAssignments(metadata, existing = {}, options = {}) {
   return updates;
 }
 
+function normalizeStatusValue(status) {
+  return String(status || '').trim().toLowerCase();
+}
+
+function isSpinnerStatusEligible(item) {
+  if (!item) return false;
+  if (item.watched === true) return false;
+  const normalized = normalizeStatusValue(item.status);
+  if (!normalized) return true;
+  if (normalized.startsWith('drop')) return false;
+  if (normalized.startsWith('complete')) return false;
+  if (normalized.startsWith('watched')) return false;
+  return true;
+}
+
+function isItemWatched(item) {
+  if (!item) return false;
+  if (typeof item.watched === 'boolean') {
+    return item.watched;
+  }
+  const normalized = normalizeStatusValue(item.status);
+  if (!normalized) return false;
+  if (normalized.startsWith('complete')) return true;
+  if (normalized.startsWith('watched')) return true;
+  return false;
+}
+
+function parseSeriesOrder(value) {
+  if (value === null || value === undefined || value === '') {
+    return Number.POSITIVE_INFINITY;
+  }
+  const num = Number(value);
+  if (Number.isFinite(num)) {
+    return num;
+  }
+  const parsed = parseFloat(String(value).replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+function buildSpinnerCandidates(listType, rawData) {
+  const entries = Object.entries(rawData || {});
+  if (!entries.length) return [];
+
+  const mapped = entries
+    .map(([id, item]) => {
+      if (!item) return null;
+      return item.__id ? item : Object.assign({ __id: id }, item);
+    })
+    .filter(Boolean);
+
+  const eligibleItems = mapped.filter((item) => isSpinnerStatusEligible(item));
+  if (!eligibleItems.length) return [];
+
+  const shouldApplySeriesLogic = ['movies', 'tvShows', 'anime'].includes(listType);
+  if (!shouldApplySeriesLogic) {
+    return eligibleItems.filter(item => !isItemWatched(item));
+  }
+
+  const standalone = [];
+  const seriesMap = new Map();
+
+  eligibleItems.forEach(item => {
+    const seriesNameRaw = typeof item.seriesName === 'string' ? item.seriesName.trim() : '';
+    if (seriesNameRaw) {
+      const key = seriesNameRaw.toLowerCase();
+      if (!seriesMap.has(key)) {
+        seriesMap.set(key, []);
+      }
+      seriesMap.get(key).push({ order: parseSeriesOrder(item.seriesOrder), item });
+    } else {
+      if (!isItemWatched(item)) {
+        standalone.push(item);
+      }
+    }
+  });
+
+  seriesMap.forEach(entries => {
+    if (!entries || !entries.length) return;
+    entries.sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      const titleA = (a.item && a.item.title ? a.item.title : '').toLowerCase();
+      const titleB = (b.item && b.item.title ? b.item.title : '').toLowerCase();
+      if (titleA < titleB) return -1;
+      if (titleA > titleB) return 1;
+      return 0;
+    });
+    const firstUnwatched = entries.find(entry => entry && entry.item && !isItemWatched(entry.item));
+    if (firstUnwatched && firstUnwatched.item) {
+      standalone.push(firstUnwatched.item);
+    }
+  });
+
+  return standalone.sort((a, b) => {
+    const titleA = (a && a.title ? a.title : '').toLowerCase();
+    const titleB = (b && b.title ? b.title : '').toLowerCase();
+    if (titleA < titleB) return -1;
+    if (titleA > titleB) return 1;
+    return 0;
+  });
+}
+
 function getMissingMetadataFields(item, listType) {
   if (!item) return [];
   let criticalFields = ['poster', 'plot'];
@@ -3540,22 +3166,14 @@ function needsMetadataRefresh(listType, item) {
   return getMissingMetadataFields(item, listType).length > 0;
 }
 
-function shouldSkipMetadataRefresh(key) {
-  if (!key) return false;
-  const lastAttempt = metadataRefreshHistory.get(key);
-  if (!lastAttempt) return false;
-  return (Date.now() - lastAttempt) < METADATA_REFRESH_COOLDOWN_MS;
-}
-
 function refreshTmdbMetadataForItem(listType, itemId, item, missingFields = []) {
   if (!TMDB_API_KEY) {
     maybeWarnAboutTmdbKey();
     return;
   }
   const key = `${listType}:${itemId}`;
-  if (metadataRefreshInflight.has(key) || shouldSkipMetadataRefresh(key)) return;
+  if (metadataRefreshInflight.has(key)) return;
   metadataRefreshInflight.add(key);
-  metadataRefreshHistory.set(key, Date.now());
 
   const title = item.title || '[untitled]';
   const yearInfo = item.year ? ` (${item.year})` : '';
@@ -3588,18 +3206,14 @@ function refreshTmdbMetadataForItem(listType, itemId, item, missingFields = []) 
 function refreshAniListMetadataForItem(itemId, item) {
   const listType = 'anime';
   const key = `${listType}:${itemId}`;
-  if (metadataRefreshInflight.has(key) || shouldSkipMetadataRefresh(key)) return;
+  if (metadataRefreshInflight.has(key)) return;
   metadataRefreshInflight.add(key);
-  metadataRefreshHistory.set(key, Date.now());
   const lookup = {
     aniListId: item.aniListId || item.anilistId || item.AniListId || '',
     title: item.title || '',
     year: item.year || '',
   };
-  fetchAniListMetadata(lookup, {
-    requestSource: 'Auto metadata refresh',
-    notifyOnError: true,
-  }).then(metadata => {
+  fetchAniListMetadata(lookup).then(metadata => {
     if (!metadata) return;
     const updates = deriveMetadataAssignments(metadata, item, {
       overwrite: false,
@@ -3674,7 +3288,7 @@ function maybeWarnAboutTmdbKey() {
   tmdbWarningShown = true;
   const message = 'TMDb API key missing. Metadata lookups, autocomplete, and collection helpers are disabled. Set TMDB_API_KEY in app.js to re-enable them.';
   console.warn(message);
-  showAlert(message);
+  alert(message);
 }
 
 function hideTitleSuggestions(form) {
@@ -3703,93 +3317,6 @@ function resetFilterState() {
   COLLAPSIBLE_LISTS.forEach(listType => updateCollapsibleCardStates(listType));
   resetUnifiedFilters();
   renderUnifiedLibrary();
-  renderGlobalLibrarySummary();
-}
-
-function ensureGlobalLoadingElements() {
-  if (globalLoadingOverlayEl) return true;
-  const el = document.getElementById('global-loading-overlay');
-  if (!el) return false;
-  globalLoadingOverlayEl = el;
-  globalLoadingMessageEl = el.querySelector('[data-overlay-message]');
-  return true;
-}
-
-function scheduleGlobalLoadingOverlayInit() {
-  if (globalLoadingOverlayInitPending) return;
-  if (typeof document === 'undefined' || document.readyState !== 'loading') return;
-  globalLoadingOverlayInitPending = true;
-  document.addEventListener('DOMContentLoaded', () => {
-    globalLoadingOverlayInitPending = false;
-    updateGlobalLoadingOverlay();
-  }, { once: true });
-}
-
-function updateGlobalLoadingOverlay() {
-  if (!ensureGlobalLoadingElements()) {
-    scheduleGlobalLoadingOverlayInit();
-    return;
-  }
-  if (!globalLoadingOverlayEl) return;
-  if (!globalLoadingReasons.size) {
-    globalLoadingOverlayEl.classList.add('hidden');
-    globalLoadingOverlayEl.classList.remove('visible');
-    globalLoadingOverlayEl.setAttribute('aria-hidden', 'true');
-    return;
-  }
-  let activeKey = null;
-  for (const key of GLOBAL_LOADING_PRIORITY) {
-    if (globalLoadingReasons.has(key)) {
-      activeKey = key;
-      break;
-    }
-  }
-  if (!activeKey) {
-    const iterator = globalLoadingReasons.keys().next();
-    activeKey = iterator && !iterator.done ? iterator.value : null;
-  }
-  const entry = activeKey ? globalLoadingReasons.get(activeKey) : null;
-  if (globalLoadingMessageEl && entry) {
-    globalLoadingMessageEl.textContent = entry.message || 'Working...';
-  }
-  globalLoadingOverlayEl.classList.remove('hidden');
-  globalLoadingOverlayEl.classList.add('visible');
-  globalLoadingOverlayEl.setAttribute('aria-hidden', 'false');
-}
-
-function setGlobalLoadingReason(reason, isActive, message) {
-  if (!reason) return;
-  if (isActive) {
-    const label = message || GLOBAL_LOADING_MESSAGES[reason] || 'Working...';
-    globalLoadingReasons.set(reason, { message: label, timestamp: Date.now() });
-  } else {
-    globalLoadingReasons.delete(reason);
-  }
-  updateGlobalLoadingOverlay();
-}
-
-function refreshUnifiedLoadingIndicator() {
-  if (!currentUser || !listInitialLoadState.size) {
-    setGlobalLoadingReason('unifiedLoad', false);
-    return;
-  }
-  const pending = [];
-  listInitialLoadState.forEach((loaded, listType) => {
-    if (!loaded) pending.push(listType);
-  });
-  if (!pending.length) {
-    setGlobalLoadingReason('unifiedLoad', false);
-    return;
-  }
-  const message = pending.length > 1
-    ? GLOBAL_LOADING_MESSAGES.unifiedLoad
-    : `Loading ${getListLabel(pending[0])}...`;
-  setGlobalLoadingReason('unifiedLoad', true, message);
-}
-
-function clearUnifiedLoadingState() {
-  listInitialLoadState.clear();
-  setGlobalLoadingReason('unifiedLoad', false);
 }
 
 function renderTitleSuggestions(container, suggestions, onSelect) {
@@ -3832,46 +3359,7 @@ function renderTitleSuggestions(container, suggestions, onSelect) {
       year.textContent = suggestion.year;
       button.appendChild(year);
     }
-    const triggerSelection = () => {
-      if (onSelect) {
-        try {
-          const result = onSelect(suggestion);
-          if (result && typeof result.catch === 'function') {
-            result.catch(err => console.warn('Suggestion handler failed', err));
-          }
-        } catch (err) {
-          console.warn('Suggestion handler failed', err);
-        }
-      }
-    };
-    let pointerHandled = false;
-    let pointerHandledResetTimer = null;
-    button.addEventListener('pointerdown', (event) => {
-      if (typeof event.button === 'number' && event.button !== 0) return;
-      pointerHandled = true;
-      if (pointerHandledResetTimer) {
-        clearTimeout(pointerHandledResetTimer);
-        pointerHandledResetTimer = null;
-      }
-      pointerHandledResetTimer = setTimeout(() => {
-        pointerHandled = false;
-        pointerHandledResetTimer = null;
-      }, 400);
-      event.preventDefault();
-      triggerSelection();
-    });
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      if (pointerHandled) {
-        pointerHandled = false;
-        if (pointerHandledResetTimer) {
-          clearTimeout(pointerHandledResetTimer);
-          pointerHandledResetTimer = null;
-        }
-        return;
-      }
-      triggerSelection();
-    });
+    button.addEventListener('click', () => onSelect && onSelect(suggestion));
     container.appendChild(button);
   });
 }
@@ -3989,10 +3477,7 @@ function setupFormAutocomplete(form, listType) {
           delete form.dataset.selectedAnilistId;
         }
         try {
-          const detail = await fetchAniListMetadata(
-            { aniListId: suggestion.anilistId, title: suggestion.title, year: suggestionYear },
-            { requestSource: 'Autocomplete metadata', notifyOnError: true }
-          );
+          const detail = await fetchAniListMetadata({ aniListId: suggestion.anilistId, title: suggestion.title, year: suggestionYear });
           if (detail) {
             form.__selectedMetadata = detail;
             if (yearInput && detail.Year) {
@@ -4183,10 +3668,6 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
   const runtimeMinutes = mediaType === 'movie'
     ? detail.runtime
     : (Array.isArray(detail.episode_run_time) && detail.episode_run_time.length ? detail.episode_run_time[0] : null);
-  const totalEpisodes = mediaType === 'tv' ? Number(detail.number_of_episodes) || null : null;
-  const totalSeasons = mediaType === 'tv' ? Number(detail.number_of_seasons) || null : null;
-  const tvSeasonEntries = mediaType === 'tv' ? extractTvSeasonMetadata(detail) : [];
-  const statusLabel = detail.status || '';
   const crew = Array.isArray(detail.credits?.crew) ? detail.credits.crew : [];
   const directorCrew = crew.find(member => member && member.job === 'Director');
   const director = directorCrew?.name
@@ -4201,15 +3682,11 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
   const tmdbId = detail.id || '';
   const englishDubAvailable = hasEnglishSpokenLanguage(detail.spoken_languages);
 
-  const payload = {
+  return {
     Title: detail.title || detail.name || '',
     Year: releaseDate ? String(releaseDate).slice(0, 4) : '',
     Director: director,
-    Runtime: runtimeMinutes
-      ? mediaType === 'movie'
-        ? `${runtimeMinutes} min`
-        : `${runtimeMinutes} min/ep`
-      : '',
+    Runtime: runtimeMinutes ? `${runtimeMinutes} min` : '',
     Poster: poster || 'N/A',
     Plot: detail.overview || '',
     imdbID: imdbId,
@@ -4222,47 +3699,7 @@ function mapTmdbDetailToMetadata(detail, mediaType) {
     OriginalLanguageIso: detail.original_language || '',
     EnglishDubAvailable: englishDubAvailable,
     TmdbID: tmdbId,
-    Episodes: totalEpisodes,
-    Seasons: totalSeasons,
-    EpisodeRuntime: runtimeMinutes || null,
   };
-  if (mediaType === 'tv') {
-    if (tvSeasonEntries.length) {
-      payload.TvSeasons = tvSeasonEntries;
-    }
-    if (tvSeasonEntries.length || totalSeasons) {
-      payload.TvSeasonCount = tvSeasonEntries.length || totalSeasons || null;
-    }
-  }
-  if (statusLabel) {
-    payload.Status = statusLabel;
-  }
-  return payload;
-}
-
-function extractTvSeasonMetadata(detail) {
-  if (!detail || !Array.isArray(detail.seasons)) return [];
-  return detail.seasons
-    .filter(season => season && typeof season.season_number === 'number' && season.season_number >= 1)
-    .map((season, index) => {
-      const number = Number(season.season_number);
-      const year = extractPrimaryYear(season.air_date || '') || '';
-      const episodes = Number(season.episode_count);
-      return {
-        number: Number.isFinite(number) ? number : index,
-        label: season.name || '',
-        title: season.name || '',
-        episodes: Number.isFinite(episodes) && episodes >= 0 ? episodes : null,
-        year,
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => {
-      if (Number.isFinite(a.number) && Number.isFinite(b.number)) {
-        return a.number - b.number;
-      }
-      return (a.title || '').localeCompare(b.title || '');
-    });
 }
 
 async function tmdbFetch(path, params = {}) {
@@ -4361,109 +3798,6 @@ function buildFranchiseSeasonEntries(tvDetails) {
       overview: season.overview || '',
     }));
 }
-
-  function deriveAnimeSeasonBreakdown(listType, cardId, fallbackItem) {
-    const entries = collectSeriesEntries(listType, cardId, fallbackItem);
-    if (!entries.length) return [];
-    const seasons = [];
-    entries.forEach(entry => {
-      if (!entry) return;
-      const format = String(entry.animeFormat || entry.imdbType || '').toUpperCase();
-      if (format && !ANIME_SEASON_FORMATS.has(format)) return;
-      const order = Number(entry.seriesOrder);
-      const episodes = Number(entry.animeEpisodes || entry.episodes);
-      seasons.push({
-        order: Number.isFinite(order) ? order : null,
-        title: entry.title || '',
-        episodes: Number.isFinite(episodes) && episodes > 0 ? episodes : null,
-      });
-    });
-    seasons.sort((a, b) => {
-      const orderA = Number.isFinite(a.order) ? a.order : 9999;
-      const orderB = Number.isFinite(b.order) ? b.order : 9999;
-      if (orderA !== orderB) return orderA - orderB;
-      return (a.title || '').localeCompare(b.title || '');
-    });
-    return seasons.map((season, index) => ({
-      label: Number.isFinite(season.order) && season.order > 0
-        ? `Season ${season.order}`
-        : `Season ${index + 1}`,
-      title: season.title,
-      episodes: season.episodes,
-    }));
-  }
-
-  function normalizeTvSeasonEntries(source) {
-    if (!Array.isArray(source)) return [];
-    const normalized = source.map((season, index) => {
-      if (!season) return null;
-      const rawNumber = Number(
-        season.number ?? season.seasonNumber ?? season.season ?? season.order ?? season.seriesOrder
-      );
-      const number = Number.isFinite(rawNumber) && rawNumber > 0 ? rawNumber : null;
-      const label = season.label || season.name || season.title || (number ? `Season ${number}` : '');
-      const title = season.title || season.name || '';
-      const episodesValue = Number(
-        season.episodes ?? season.episodeCount ?? season.totalEpisodes ?? season.count
-      );
-      const episodes = Number.isFinite(episodesValue) && episodesValue >= 0 ? episodesValue : null;
-      const airYear = season.year || extractPrimaryYear(season.airDate || season.premiereDate || '') || '';
-      return {
-        number,
-        label,
-        title,
-        episodes,
-        year: airYear,
-        index,
-      };
-    }).filter(Boolean);
-    normalized.sort((a, b) => {
-      if (Number.isFinite(a.number) && Number.isFinite(b.number)) {
-        return a.number - b.number;
-      }
-      if (Number.isFinite(a.number)) return -1;
-      if (Number.isFinite(b.number)) return 1;
-      return (a.label || '').localeCompare(b.label || '');
-    });
-    return normalized.map((season, idx) => ({
-      label: season.label || (Number.isFinite(season.number) ? `Season ${season.number}` : `Season ${idx + 1}`),
-      title: season.title || season.label || '',
-      episodes: season.episodes,
-      year: season.year || '',
-      number: season.number ?? null,
-    }));
-  }
-
-  function deriveTvSeasonBreakdown(listType, cardId, fallbackItem) {
-    const entries = collectSeriesEntries(listType, cardId, fallbackItem);
-    if (!entries.length) return [];
-    const metadataSource = entries.find(entry => Array.isArray(entry.tvSeasons) && entry.tvSeasons.length);
-    if (metadataSource) {
-      return normalizeTvSeasonEntries(metadataSource.tvSeasons);
-    }
-
-    const derived = entries.map(entry => {
-      if (!entry) return null;
-      const order = numericSeriesOrder(entry.seriesOrder);
-      const episodes = Number(entry.episodeCount || entry.episodes);
-      return {
-        number: Number.isFinite(order) && order > 0 ? order : null,
-        title: entry.title || '',
-        label: Number.isFinite(order) && order > 0 ? `Season ${order}` : (entry.title || ''),
-        episodes: Number.isFinite(episodes) && episodes > 0 ? episodes : null,
-        year: entry.year || '',
-      };
-    }).filter(Boolean);
-    const normalized = normalizeTvSeasonEntries(derived);
-    if (normalized.length) return normalized;
-
-    const fallback = entries[0];
-    const fallbackCount = Number(fallback?.tvSeasonCount || fallback?.seasonCount);
-    if (Number.isFinite(fallbackCount) && fallbackCount > 0) {
-      return normalizeTvSeasonEntries(Array.from({ length: fallbackCount }, (_, idx) => ({ number: idx + 1 })));
-    }
-    return [];
-  }
 
 function collectRecommendationEntries(details, mediaType) {
   if (!details) return [];
@@ -4655,6 +3989,13 @@ async function ensureTmdbIdentity(listType, item) {
   return { mediaType, tmdbId };
 }
 
+async function fetchWatchProviders(mediaType, tmdbId) {
+  const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`;
+  const resp = await fetch(url);
+  if (!resp.ok) return null;
+  return await resp.json();
+}
+
 function buildWatchNowSection(listType, item, inline = false) {
   if (!TMDB_API_KEY) return null;
   // Only applicable for screen media (movies/tv). We add it on movie cards.
@@ -4662,10 +4003,18 @@ function buildWatchNowSection(listType, item, inline = false) {
   const block = inline ? createEl('span', 'watch-now-inline') : createEl('div', 'watch-now-block');
 
   // Control (inline next to links)
-  const btnClass = 'meta-link watch-now-trigger';
+  const btnClass = inline ? 'meta-link' : 'btn secondary';
   const btn = createEl('button', btnClass, { text: 'Watch Now' });
-  btn.type = 'button';
-  block.appendChild(btn);
+  if (!inline) {
+    const controlRow = createEl('div', 'watch-now-controls');
+    controlRow.style.display = 'flex';
+    controlRow.style.gap = '.5rem';
+    controlRow.style.alignItems = 'center';
+    controlRow.appendChild(btn);
+    block.appendChild(controlRow);
+  } else {
+    block.appendChild(btn);
+  }
 
   const dropdown = createEl('div', 'watch-dropdown');
   dropdown.style.display = 'none';
@@ -4807,7 +4156,7 @@ function addItem(listType, item) {
 // Update an existing item
 function updateItem(listType, itemId, changes) {
   if (!currentUser) {
-    showAlert('Not signed in');
+    alert('Not signed in');
     return Promise.reject(new Error('Not signed in'));
   }
   const itemRef = ref(db, `users/${currentUser.uid}/${listType}/${itemId}`);
@@ -4816,7 +4165,7 @@ function updateItem(listType, itemId, changes) {
 
 async function moveItemBetweenLists(sourceListType, targetListType, itemId, itemData) {
   if (!currentUser) {
-    showAlert('Not signed in');
+    alert('Not signed in');
     throw new Error('Not signed in');
   }
   const cleaned = { ...itemData };
@@ -4836,7 +4185,7 @@ async function moveItemBetweenLists(sourceListType, targetListType, itemId, item
 // Delete an item
 function deleteItem(listType, itemId) {
   if (!currentUser) {
-    showAlert('Not signed in');
+    alert('Not signed in');
     return Promise.reject(new Error('Not signed in'));
   }
   if (!confirm('Delete this item?')) return;
@@ -4854,21 +4203,21 @@ function deleteItem(listType, itemId) {
 async function deleteSeriesEntries(listType, seriesName) {
   if (!SERIES_BULK_DELETE_LISTS.has(listType)) return;
   if (!currentUser) {
-    showAlert('Not signed in');
+    alert('Not signed in');
     return;
   }
   if (!seriesName) {
-    showAlert('Series name missing for bulk delete.');
+    alert('Series name missing for bulk delete.');
     return;
   }
   const normalized = normalizeTitleKey(seriesName);
   if (!normalized) {
-    showAlert('Unable to determine which series to delete.');
+    alert('Unable to determine which series to delete.');
     return;
   }
   const entries = Object.entries(listCaches[listType] || {}).filter(([, item]) => normalizeTitleKey(item?.seriesName || '') === normalized);
   if (!entries.length) {
-    showAlert(`No entries found for "${seriesName}".`);
+    alert(`No entries found for "${seriesName}".`);
     return;
   }
   const confirmed = confirm(`Delete all ${entries.length} entries in the "${seriesName}" series? This cannot be undone.`);
@@ -4882,9 +4231,9 @@ async function deleteSeriesEntries(listType, seriesName) {
   });
   try {
     await Promise.all(removals);
-    showAlert(`Deleted ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} from "${seriesName}".`);
+    alert(`Deleted ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} from "${seriesName}".`);
   } catch (err) {
-    showAlert('Some entries could not be deleted. Please try again.');
+    alert('Some entries could not be deleted. Please try again.');
   }
 }
 
@@ -4994,10 +4343,7 @@ function openEditModal(listType, itemId, item) {
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const newTitle = (titleInput.value || '').trim();
-    if (!newTitle) {
-      showAlert('Title is required');
-      return;
-    }
+    if (!newTitle) return alert('Title is required');
     const updatedYear = sanitizeYear((yearInput.value || '').trim());
     const creatorVal = (creatorInput.value || '').trim();
     const targetListType = typeSelect.value;
@@ -5035,7 +4381,7 @@ function openEditModal(listType, itemId, item) {
       closeModal();
     } catch (err) {
       console.error('Edit save failed', err);
-      showAlert('Unable to save changes right now. Please try again.');
+      alert('Unable to save changes right now. Please try again.');
     } finally {
       setButtonBusy(saveBtn, false);
     }
@@ -5053,7 +4399,7 @@ function openEditModal(listType, itemId, item) {
 async function refreshItemMetadata(listType, itemId, item, options = {}) {
   const supported = new Set(['movies', 'tvShows', 'anime', 'books']);
   if (!supported.has(listType)) {
-    showAlert('Metadata refresh is only available for movies, TV, anime, or books.');
+    alert('Metadata refresh is only available for movies, TV, anime, or books.');
     return;
   }
   const { title = '', year = '', button = null } = options;
@@ -5081,14 +4427,11 @@ async function refreshItemMetadata(listType, itemId, item, options = {}) {
   try {
     let metadata = null;
     if (listType === 'anime') {
-      metadata = await fetchAniListMetadata(
-        {
-          aniListId: getAniListIdFromItem(item),
-          title: lookupTitle,
-          year: lookupYear,
-        },
-        { requestSource: 'Manual metadata refresh', notifyOnError: true }
-      );
+      metadata = await fetchAniListMetadata({
+        aniListId: getAniListIdFromItem(item),
+        title: lookupTitle,
+        year: lookupYear,
+      });
     } else if (listType === 'books') {
       metadata = await fetchGoogleBooksMetadata({
         volumeId: item.googleBooksId || '',
@@ -5099,7 +4442,7 @@ async function refreshItemMetadata(listType, itemId, item, options = {}) {
     } else {
       if (!TMDB_API_KEY) {
         maybeWarnAboutTmdbKey();
-        showAlert('TMDb metadata refresh requires an API key.');
+        alert('TMDb metadata refresh requires an API key.');
         return;
       }
       metadata = await fetchTmdbMetadata(listType, {
@@ -5111,7 +4454,7 @@ async function refreshItemMetadata(listType, itemId, item, options = {}) {
     }
 
     if (!metadata) {
-      showAlert('No metadata found for this title.');
+      alert('No metadata found for this title.');
       return;
     }
 
@@ -5122,19 +4465,84 @@ async function refreshItemMetadata(listType, itemId, item, options = {}) {
     });
 
     if (!updates || Object.keys(updates).length === 0) {
-      showAlert('Metadata already looks up to date.');
+      alert('Metadata already looks up to date.');
       return;
     }
 
     await updateItem(listType, itemId, updates);
     Object.assign(item, updates);
-    showAlert('Metadata refreshed!');
+    alert('Metadata refreshed!');
   } catch (err) {
     console.error('Manual metadata refresh failed', err);
-    showAlert('Unable to refresh metadata right now. Please try again.');
+    alert('Unable to refresh metadata right now. Please try again.');
   } finally {
     setButtonState(false);
   }
+}
+
+function buildSpinnerDataScope(listType, rawData) {
+  if (!rawData) return {};
+  if (!listSupportsActorFilter(listType)) return rawData;
+  const filterValue = getActorFilterValue(listType);
+  if (!filterValue) return rawData;
+  const scoped = {};
+  Object.entries(rawData).forEach(([id, entry]) => {
+    if (matchesActorFilter(listType, entry, filterValue)) {
+      scoped[id] = entry;
+    }
+  });
+  return scoped;
+}
+
+function loadSpinnerSourceData(listType) {
+  const cached = listCaches[listType];
+  if (cached) {
+    return Promise.resolve({ data: cached, source: 'cache' });
+  }
+  const listRef = ref(db, `users/${currentUser.uid}/${listType}`);
+  return get(listRef).then(snap => ({ data: snap.val() || {}, source: 'remote' }));
+}
+
+function clearWheelAnimation() {
+  spinTimeouts.forEach(id => clearTimeout(id));
+  spinTimeouts = [];
+  if (!wheelSpinnerEl) return;
+  wheelSpinnerEl.classList.remove('spinning');
+  wheelSpinnerEl.innerHTML = '';
+}
+
+function renderWheelResult(item, listType) {
+  if (!wheelResultEl) return;
+  if (!item) {
+    wheelResultEl.textContent = '';
+    return;
+  }
+
+  const actionVerb = listType === 'books' ? 'read' : 'watch';
+  wheelResultEl.innerHTML = '';
+
+  const heading = document.createElement('div');
+  heading.className = 'wheel-result-heading';
+  heading.textContent = `You should ${actionVerb} next:`;
+  wheelResultEl.appendChild(heading);
+
+  const entryId = item.__id || item.id || '';
+  const cardId = entryId || `wheel-${Date.now()}`;
+  let cardNode = null;
+
+  if (isCollapsibleList(listType)) {
+    cardNode = buildCollapsibleMovieCard(listType, cardId, item, 0, {
+      hideCard: false,
+      displayEntryId: entryId || cardId,
+      interactive: false,
+    });
+    cardNode.classList.add('expanded');
+  } else {
+    cardNode = buildStandardCard(listType, cardId, item);
+  }
+
+  cardNode.classList.add('wheel-result-card');
+  wheelResultEl.appendChild(cardNode);
 }
 
 // --- Sequel / Prequel Lookup Logic (TMDb only) ---
@@ -5269,7 +4677,172 @@ async function lookupRelatedTitles(item) {
     buildRelatedModal(item, tmdbList);
     return;
   }
-  showAlert('No related titles found on TMDb.');
+  alert('No related titles found on TMDb.');
+}
+
+function resolveSeriesRedirect(listType, item, rawData) {
+  if (!item || !rawData) return item;
+  if (!['movies', 'tvShows', 'anime'].includes(listType)) return item;
+  const rawSeries = typeof item.seriesName === 'string' ? item.seriesName.trim() : '';
+  if (!rawSeries) return item;
+  const targetKey = rawSeries.toLowerCase();
+  const siblings = Object.entries(rawData || {}).map(([id, entry]) => {
+    if (!entry) return null;
+    const entrySeries = typeof entry.seriesName === 'string' ? entry.seriesName.trim() : '';
+    if (!entrySeries || entrySeries.toLowerCase() !== targetKey) return null;
+    return entry.__id ? entry : Object.assign({ __id: id }, entry);
+  }).filter(Boolean);
+  if (!siblings.length) return item;
+  siblings.sort((a, b) => {
+    const orderA = parseSeriesOrder(a.seriesOrder);
+    const orderB = parseSeriesOrder(b.seriesOrder);
+    if (orderA !== orderB) return orderA - orderB;
+    const titleA = (a && a.title ? a.title : '').toLowerCase();
+    const titleB = (b && b.title ? b.title : '').toLowerCase();
+    if (titleA < titleB) return -1;
+    if (titleA > titleB) return 1;
+    return 0;
+  });
+  const earliestUnwatched = siblings.find(entry => entry && isSpinnerStatusEligible(entry) && !isItemWatched(entry));
+  if (!earliestUnwatched) return item;
+  // If the chosen item is further in the series than the earliest unwatched, redirect.
+  const chosenOrder = parseSeriesOrder(item.seriesOrder);
+  const earliestOrder = parseSeriesOrder(earliestUnwatched.seriesOrder);
+  const needsRedirect = chosenOrder > earliestOrder || isItemWatched(item);
+  try {
+    console.log('[Wheel] resolveSeriesRedirect', {
+      listType,
+      series: rawSeries,
+      chosen: { title: item.title, order: chosenOrder, status: item.status },
+      earliest: { title: earliestUnwatched.title, order: earliestOrder, status: earliestUnwatched.status },
+      needsRedirect
+    });
+  } catch (_) {}
+  return needsRedirect ? earliestUnwatched : item;
+}
+
+function animateWheelSequence(candidates, chosenIndex, listType, finalItemOverride) {
+  const len = candidates.length;
+  if (len === 0 || !wheelSpinnerEl) return;
+
+  const chosenItem = candidates[chosenIndex];
+  const finalDisplayItem = finalItemOverride || chosenItem;
+  const iterations = Math.max(28, len * 5);
+  let pointer = Math.floor(Math.random() * len);
+  const sequence = [];
+  for (let i = 0; i < iterations; i++) {
+    sequence.push(candidates[pointer % len]);
+    pointer++;
+  }
+  sequence.push(finalDisplayItem);
+
+  const totalDuration = 7000; // keep spin length consistent regardless of candidate count
+  const stepCount = sequence.length;
+  const lastIndex = stepCount - 1;
+  const schedule = [];
+  for (let i = 0; i < stepCount; i++) {
+    if (lastIndex === 0) {
+      schedule.push(0);
+    } else {
+      const progress = i / lastIndex;
+      const eased = 1 - Math.pow(1 - progress, 3); // ease-out curve keeps early steps snappy
+      schedule.push(Math.round(eased * totalDuration));
+    }
+  }
+
+  try {
+    console.log('[Wheel] animate start', {
+      listType,
+      chosenIndex,
+      chosenTitle: chosenItem?.title,
+      finalTitle: finalDisplayItem?.title,
+      candidates: candidates.map(c => c && c.title).filter(Boolean),
+      steps: stepCount
+    });
+  } catch (_) {}
+
+  sequence.forEach((item, idx) => {
+    const timeout = setTimeout(() => {
+      if (!wheelSpinnerEl) return;
+      const isFinal = idx === sequence.length - 1;
+      wheelSpinnerEl.innerHTML = '';
+      const span = document.createElement('span');
+      span.className = `spin-text${isFinal ? ' final' : ''}`;
+      span.textContent = item.title || '(no title)';
+      wheelSpinnerEl.appendChild(span);
+      try { console.log(`[Wheel] step ${idx + 1}/${sequence.length}: ${item.title || '(no title)'}${isFinal ? ' [FINAL]' : ''}`); } catch (_) {}
+      if (isFinal) {
+        wheelSpinnerEl.classList.remove('spinning');
+        renderWheelResult(item, listType);
+        spinTimeouts = [];
+      }
+    }, schedule[idx]);
+    spinTimeouts.push(timeout);
+  });
+}
+
+// Wheel spinner logic
+function spinWheel(listType) {
+  if (!currentUser) {
+    alert('Not signed in');
+    return;
+  }
+  if (!wheelSpinnerEl || !wheelResultEl) {
+    console.warn('Wheel spinner UI is not mounted. Open the wheel modal first.');
+    return;
+  }
+  clearWheelAnimation();
+  wheelResultEl.innerHTML = '';
+  wheelSpinnerEl.classList.remove('hidden');
+  wheelSpinnerEl.classList.add('spinning');
+  const placeholder = document.createElement('span');
+  placeholder.className = 'spin-text';
+  placeholder.textContent = 'Spinning…';
+  wheelSpinnerEl.appendChild(placeholder);
+
+  loadSpinnerSourceData(listType).then(({ data, source }) => {
+    if (!wheelSpinnerEl || !wheelResultEl) {
+      clearWheelAnimation();
+      return;
+    }
+    const scopedData = buildSpinnerDataScope(listType, data);
+    const candidates = buildSpinnerCandidates(listType, scopedData);
+    try {
+      console.log('[Wheel] spin start', {
+        listType,
+        source,
+        candidateCount: candidates.length,
+        titles: candidates.map(c => c && c.title).filter(Boolean)
+      });
+    } catch (_) {}
+    if (candidates.length === 0) {
+      if (!wheelSpinnerEl || !wheelResultEl) return;
+      clearWheelAnimation();
+      const emptyState = document.createElement('span');
+      emptyState.className = 'spin-text';
+      emptyState.textContent = 'No eligible items to spin.';
+      wheelSpinnerEl.appendChild(emptyState);
+      wheelResultEl.textContent = 'No eligible items right now. Add something new or reset some items back to Planned/Watching.';
+      return;
+    }
+    const chosenIndex = Math.floor(Math.random() * candidates.length);
+    const chosenCandidate = candidates[chosenIndex];
+    const resolvedCandidate = resolveSeriesRedirect(listType, chosenCandidate, data) || chosenCandidate;
+    try { console.log('[Wheel] pick', { chosenIndex, chosen: chosenCandidate?.title, resolved: resolvedCandidate?.title }); } catch (_) {}
+    animateWheelSequence(candidates, chosenIndex, listType, resolvedCandidate);
+  }).catch(err => {
+    console.error('Wheel load failed', err);
+    if (!wheelSpinnerEl || !wheelResultEl) {
+      clearWheelAnimation();
+      return;
+    }
+    clearWheelAnimation();
+    const errorState = document.createElement('span');
+    errorState.className = 'spin-text';
+    errorState.textContent = 'Unable to load items.';
+    wheelSpinnerEl.appendChild(errorState);
+    wheelResultEl.textContent = 'Unable to load items.';
+  });
 }
 
 // Boot
@@ -5285,151 +4858,26 @@ if (auth) {
   } catch(e) { /* silent */ }
 }
 
-// tmEasterEgg.bindTriggers();
-function bootstrapUnifiedLibraryUi() {
-  initUnifiedLibraryControls();
-  renderUnifiedLibrary();
-  renderGlobalLibrarySummary();
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bootstrapUnifiedLibraryUi, { once: true });
-} else {
-  bootstrapUnifiedLibraryUi();
-}
+tmEasterEgg.bindTriggers();
+initUnifiedLibraryControls();
+renderUnifiedLibrary();
 
 function updateListStats(listType, entries) {
   const statsEl = document.getElementById(`${listType}-stats`);
   if (!statsEl) return;
   const count = Array.isArray(entries) ? entries.length : 0;
-  const nounMap = {
-    movies: 'movie',
-    tvShows: 'show',
-    anime: 'anime',
-    books: 'item',
-  };
-  const noun = nounMap[listType] || 'item';
-  const label = `${count} ${noun}${count === 1 ? '' : 's'}`;
-  const watchTimeEligible = ['movies', 'tvShows', 'anime'].includes(listType);
-  if (watchTimeEligible) {
+  if (listType === 'movies') {
     const totalMinutes = (Array.isArray(entries) ? entries : []).reduce((sum, [, item]) => {
-      return sum + estimateItemWatchMinutes(listType, item);
+      return sum + parseRuntimeMinutes(item && item.runtime);
     }, 0);
+    const label = `${count} movie${count === 1 ? '' : 's'}`;
     const runtimeLabel = totalMinutes > 0
-      ? `${formatRuntimeDuration(totalMinutes)} total watch time`
-      : 'Watch time unavailable';
+      ? `${formatRuntimeDuration(totalMinutes)} total runtime`
+      : 'Runtime unavailable';
     statsEl.textContent = `${label} • ${runtimeLabel}`;
     return;
   }
-  statsEl.textContent = label;
-}
-
-function haveAllListsFinishedInitialLoad() {
-  if (!listInitialLoadState.size) return false;
-  return PRIMARY_LIST_TYPES.every(listType => listInitialLoadState.get(listType));
-}
-
-function computeGlobalLibraryStats() {
-  let totalItems = 0;
-  let totalWatchMinutes = 0;
-  let movieCount = 0;
-  let episodeCount = 0;
-  PRIMARY_LIST_TYPES.forEach(listType => {
-    const cache = listCaches[listType] || {};
-    const entries = Object.entries(cache);
-    totalItems += entries.length;
-    if (listType === 'movies') {
-      movieCount += entries.length;
-    }
-    if (listType === 'tvShows' || listType === 'anime') {
-      entries.forEach(([, item]) => {
-        episodeCount += extractEpisodeCount(item);
-      });
-    }
-    if (WATCH_TIME_LISTS.has(listType)) {
-      entries.forEach(([, item]) => {
-        totalWatchMinutes += estimateItemWatchMinutes(listType, item);
-      });
-    }
-  });
-  return {
-    totalItems,
-    movieCount,
-    episodeCount,
-    totalWatchMinutes: Math.round(totalWatchMinutes),
-  };
-}
-
-function formatExtendedDurationUnit(value, unit) {
-  if (!Number.isFinite(value) || value <= 0) return '';
-  const formatted = value >= 100
-    ? Math.round(value).toString()
-    : value >= 10
-      ? value.toFixed(1)
-      : value.toFixed(2);
-  const trimmed = formatted.replace(/\.00?$/, '').replace(/(\.\d)0$/, '$1');
-  const label = Math.abs(value - 1) < 0.0001 ? unit : `${unit}s`;
-  return `${trimmed} ${label}`;
-}
-
-function formatExtendedWatchDuration(minutes) {
-  if (!minutes || minutes <= 0) return '';
-  const minutesPerDay = 60 * 24;
-  const breakdown = [
-    { unit: 'day', value: minutes / minutesPerDay },
-    { unit: 'week', value: minutes / (minutesPerDay * 7) },
-    { unit: 'month', value: minutes / (minutesPerDay * 30) },
-    { unit: 'year', value: minutes / (minutesPerDay * 365) },
-  ];
-  return breakdown
-    .map(entry => formatExtendedDurationUnit(entry.value, entry.unit))
-    .filter(Boolean)
-    .join(' • ');
-}
-
-function renderGlobalLibrarySummary() {
-  const summaryEl = document.getElementById('library-summary');
-  if (!summaryEl) return;
-  summaryEl.innerHTML = '';
-  const loading = !haveAllListsFinishedInitialLoad();
-  if (!currentUser) {
-    summaryEl.appendChild(createEl('p', 'library-summary-count', { text: 'Sign in to track your lists.' }));
-    return;
-  }
-  if (loading) {
-    summaryEl.appendChild(createEl('p', 'library-summary-count', { text: 'Calculating totals...' }));
-    summaryEl.appendChild(createEl('p', 'summary-watch-secondary', { text: 'Hang tight while we load your media.' }));
-    return;
-  }
-  const stats = computeGlobalLibraryStats();
-  const hasMovies = stats.movieCount > 0;
-  const hasEpisodes = stats.episodeCount > 0;
-  let countText = 'No items saved yet';
-  if (hasMovies || hasEpisodes) {
-    const movieLabel = `${stats.movieCount.toLocaleString()} movie${stats.movieCount === 1 ? '' : 's'}`;
-    const episodeLabel = `${stats.episodeCount.toLocaleString()} episode${stats.episodeCount === 1 ? '' : 's'}`;
-    if (hasMovies && hasEpisodes) {
-      countText = `${movieLabel} • ${episodeLabel}`;
-    } else if (hasMovies) {
-      countText = movieLabel;
-    } else {
-      countText = episodeLabel;
-    }
-  }
-  summaryEl.appendChild(createEl('p', 'library-summary-count', { text: countText }));
-  const watchBlock = createEl('div', 'library-summary-watch');
-  if (stats.totalWatchMinutes > 0) {
-    const runtimeLabel = formatRuntimeDuration(stats.totalWatchMinutes) || `${stats.totalWatchMinutes.toLocaleString()} min`;
-    watchBlock.appendChild(createEl('div', 'summary-watch-primary', { text: `${runtimeLabel} of watch time` }));
-    const extended = formatExtendedWatchDuration(stats.totalWatchMinutes);
-    if (extended) {
-      watchBlock.appendChild(createEl('div', 'summary-watch-secondary', { text: extended }));
-    }
-  } else {
-    watchBlock.appendChild(createEl('div', 'summary-watch-primary', { text: 'Watch time unavailable' }));
-    watchBlock.appendChild(createEl('div', 'summary-watch-secondary', { text: 'Add runtimes or episode counts to calculate totals.' }));
-  }
-  summaryEl.appendChild(watchBlock);
+  statsEl.textContent = `${count} item${count === 1 ? '' : 's'}`;
 }
 
 function sanitizeAniListDescription(text) {
@@ -5528,198 +4976,7 @@ function extractAnimeDurationMinutes(media) {
   return '';
 }
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function scheduleJikanForcedCooldown(durationMs) {
-  if (!Number.isFinite(durationMs) || durationMs <= 0) return;
-  const target = Date.now() + durationMs;
-  if (target > jikanForcedCooldownUntil) {
-    jikanForcedCooldownUntil = target;
-  }
-  const wait = Math.max(0, jikanForcedCooldownUntil - Date.now());
-  setGlobalLoadingReason('jikanCooldown', true);
-  if (jikanCooldownTimerId) {
-    clearTimeout(jikanCooldownTimerId);
-  }
-  jikanCooldownTimerId = setTimeout(() => {
-    if (Date.now() >= jikanForcedCooldownUntil) {
-      jikanForcedCooldownUntil = 0;
-      setGlobalLoadingReason('jikanCooldown', false);
-      jikanCooldownTimerId = null;
-    }
-  }, wait + 50);
-}
-
-function parseRetryAfterMs(value) {
-  if (!value) return 0;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return numeric * 1000;
-  }
-  const timestamp = Date.parse(value);
-  if (!Number.isNaN(timestamp)) {
-    const diff = timestamp - Date.now();
-    if (diff > 0) {
-      return diff;
-    }
-  }
-  return 0;
-}
-
-function pruneJikanRateWindows(now) {
-  while (jikanSecondWindow.length && (now - jikanSecondWindow[0]) >= JIKAN_SECOND_WINDOW_MS) {
-    jikanSecondWindow.shift();
-  }
-  while (jikanMinuteWindow.length && (now - jikanMinuteWindow[0]) >= JIKAN_MINUTE_WINDOW_MS) {
-    jikanMinuteWindow.shift();
-  }
-}
-
-function millisecondsUntilNextJikanSlot(now) {
-  let wait = JIKAN_RATE_LIMIT_MIN_INTERVAL_MS;
-  if (jikanSecondWindow.length >= JIKAN_MAX_REQUESTS_PER_SECOND) {
-    const oldest = jikanSecondWindow[0];
-    wait = Math.max(wait, Math.max(0, JIKAN_SECOND_WINDOW_MS - (now - oldest)));
-  }
-  if (jikanMinuteWindow.length >= JIKAN_MAX_REQUESTS_PER_MINUTE) {
-    const oldestMinute = jikanMinuteWindow[0];
-    wait = Math.max(wait, Math.max(0, JIKAN_MINUTE_WINDOW_MS - (now - oldestMinute)));
-  }
-  return Math.max(wait, 50);
-}
-
-async function acquireJikanRateLimitSlot() {
-  while (true) {
-    const now = Date.now();
-    if (jikanForcedCooldownUntil > now) {
-      await delay(jikanForcedCooldownUntil - now);
-      continue;
-    }
-    pruneJikanRateWindows(now);
-    const underSecond = jikanSecondWindow.length < JIKAN_MAX_REQUESTS_PER_SECOND;
-    const underMinute = jikanMinuteWindow.length < JIKAN_MAX_REQUESTS_PER_MINUTE;
-    if (underSecond && underMinute) {
-      jikanSecondWindow.push(now);
-      jikanMinuteWindow.push(now);
-      return;
-    }
-    const waitMs = millisecondsUntilNextJikanSlot(now);
-    await delay(waitMs);
-  }
-}
-
-async function withJikanRateLimit(fn) {
-  if (typeof fn !== 'function') return null;
-  const task = jikanRateLimiterTail.then(async () => {
-    await acquireJikanRateLimitSlot();
-    try {
-      return await fn();
-    } finally {
-      lastJikanRequestTimestamp = Date.now();
-    }
-  });
-  jikanRateLimiterTail = task.catch(() => {});
-  return task;
-}
-
-function notifyJikanRateLimit() {
-  const now = Date.now();
-  if (now - lastJikanRateLimitNotice < 30000) return;
-  lastJikanRateLimitNotice = now;
-  console.warn('Jikan rate limit encountered, backing off');
-}
-
-function notifyJikanNetworkIssue(message) {
-  const now = Date.now();
-  if (now - lastJikanNetworkIssueNotice < 30000) return;
-  lastJikanNetworkIssueNotice = now;
-  console.warn('Jikan network issue', message || '');
-}
-// Surface actionable MAL lookup failures without spamming the user.
-function formatJikanLookupLabel(animeId, context = {}) {
-  const parts = [];
-  const title = typeof context.title === 'string' ? context.title.trim() : '';
-  if (title) parts.push(title);
-  const year = context.year ? String(context.year).trim() : '';
-  if (year) parts.push(`(${year})`);
-  let label = parts.join(' ').trim();
-  const idSegment = animeId || context.aniListId || context.malId;
-  if (label && idSegment) {
-    label = `${label} #${idSegment}`;
-  } else if (!label && idSegment) {
-    label = `Anime ID ${idSegment}`;
-  } else if (!label) {
-    label = 'Anime lookup';
-  }
-  return label;
-}
-
-function shouldSkipJikanErrorNotice(key) {
-  const now = Date.now();
-  const last = jikanErrorNoticeTimestamps.get(key) || 0;
-  if (now - last < JIKAN_ERROR_NOTICE_COOLDOWN_MS) {
-    return true;
-  }
-  jikanErrorNoticeTimestamps.set(key, now);
-  return false;
-}
-
-function surfaceJikanLookupIssue({ animeId, status, message = '', context = null }) {
-  const identifier = animeId || context?.aniListId || context?.title || 'unknown';
-  const key = `${status || 'error'}:${identifier}`;
-  if (shouldSkipJikanErrorNotice(key)) return;
-  const descriptor = formatJikanLookupLabel(animeId || context?.aniListId, context);
-  const stage = context?.source ? context.source : '';
-  const detail = message || (status === 404 ? 'Entry not found (404).' : `Request failed (${status || 'unknown'}).`);
-  const malTarget = animeId || context?.aniListId;
-  const urlHint = malTarget ? `${MYANIMELIST_ANIME_URL}/${malTarget}` : '';
-  const summary = [descriptor, stage, detail, urlHint].filter(Boolean).join(' • ');
-  const payload = {
-    title: descriptor,
-    stage,
-    status,
-    detail,
-    malUrl: urlHint || undefined,
-    context,
-  };
-  console.error('MyAnimeList lookup issue:', summary, payload);
-}
-
 async function fetchJikanJson(path, params = {}) {
-  let attempt = 0;
-  while (attempt <= JIKAN_MAX_RETRIES) {
-    const result = await withJikanRateLimit(() => performJikanFetch(path, params));
-    if (result && result.ok) {
-      return result;
-    }
-    if (result && result.status === 429) {
-      notifyJikanRateLimit();
-      const retryAfterMs = Math.max(
-        result.retryAfterMs || 0,
-        JIKAN_DEFAULT_RETRY_AFTER_MS,
-        JIKAN_RATE_LIMIT_BACKOFF_MS * (attempt + 1)
-      );
-      scheduleJikanForcedCooldown(retryAfterMs);
-      if (attempt < JIKAN_MAX_RETRIES) {
-        await delay(retryAfterMs);
-        attempt++;
-        continue;
-      }
-    }
-    if ((!result || result.status === 0) && attempt < JIKAN_MAX_RETRIES) {
-      notifyJikanNetworkIssue(result?.message);
-      await delay(400 * (attempt + 1));
-      attempt++;
-      continue;
-    }
-    return result;
-  }
-  return { ok: false, status: 0, data: null, message: 'Max retries reached' };
-}
-
-async function performJikanFetch(path, params = {}) {
   try {
     const url = new URL(`${JIKAN_API_BASE_URL}${path}`);
     Object.entries(params || {}).forEach(([key, value]) => {
@@ -5729,101 +4986,36 @@ async function performJikanFetch(path, params = {}) {
     const resp = await fetch(url.toString(), {
       headers: { 'Accept': 'application/json' },
     });
-    const contentType = resp.headers.get('content-type') || '';
-    const isJson = contentType.includes('application/json');
-    const retryAfterMs = parseRetryAfterMs(resp.headers.get('retry-after'));
-    let payload = null;
-    try {
-      payload = isJson ? await resp.json() : await resp.text();
-    } catch (_) {
-      payload = null;
-    }
     if (!resp.ok) {
-      if (resp.status === 404) {
-        console.info('Jikan request not found', path);
-      } else {
-        console.warn('Jikan request failed', resp.status, path, payload);
-      }
-      return {
-        ok: false,
-        status: resp.status,
-        data: payload,
-        message: extractJikanErrorMessage(payload),
-        retryAfterMs,
-      };
+      const text = await resp.text();
+      console.warn('Jikan request failed', resp.status, path, text);
+      return null;
     }
-    return {
-      ok: true,
-      status: resp.status,
-      data: payload,
-      retryAfterMs,
-    };
+    return await resp.json();
   } catch (err) {
     console.warn('Jikan request error', err);
-    return {
-      ok: false,
-      status: 0,
-      data: null,
-      message: err?.message || 'Network error',
-    };
+    return null;
   }
 }
 
-function extractJikanErrorMessage(payload) {
-  if (!payload) return '';
-  if (typeof payload === 'string') return payload;
-  if (typeof payload.message === 'string') return payload.message;
-  if (typeof payload.error === 'string') return payload.error;
-  return '';
-}
-
-async function fetchJikanAnimeDetails(id, options = {}) {
-  const { context = null, notifyOnError = false } = options || {};
+async function fetchJikanAnimeDetails(id) {
   const numericId = Number(id);
   if (!Number.isFinite(numericId) || numericId <= 0) return null;
-  if (jikanNotFoundAnimeIds.has(numericId)) {
-    if (notifyOnError) {
-      surfaceJikanLookupIssue({
-        animeId: numericId,
-        status: 404,
-        message: 'Previously marked as missing on MyAnimeList.',
-        context,
-      });
-    }
-    return null;
-  }
-  const response = await fetchJikanJson(`/anime/${numericId}/full`);
-  if (!response || !response.ok || !response.data) {
-    if (response && response.status === 404) {
-      jikanNotFoundAnimeIds.add(numericId);
-    }
-    const status = response ? response.status : 0;
-    if (notifyOnError && status >= 400 && status !== 429) {
-      surfaceJikanLookupIssue({
-        animeId: numericId,
-        status,
-        message: response?.message || '',
-        context,
-      });
-    }
-    return null;
-  }
-  const payload = response.data;
-  return payload && payload.data ? payload.data : null;
+  const json = await fetchJikanJson(`/anime/${numericId}/full`);
+  return json && json.data ? json.data : null;
 }
 
 async function fetchJikanAnimeSearch(query, limit = 10) {
   if (!query || query.length < 2) return [];
-  const response = await fetchJikanJson('/anime', {
+  const json = await fetchJikanJson('/anime', {
     q: query,
     limit: String(limit),
     order_by: 'score',
     sort: 'desc',
     sfw: 'true',
   });
-  const data = response && response.ok ? response.data : null;
-  if (!data || !Array.isArray(data.data)) return [];
-  return data.data;
+  if (!json || !Array.isArray(json.data)) return [];
+  return json.data;
 }
 
 async function fetchAniListSuggestions(query) {
@@ -5840,22 +5032,11 @@ async function fetchAniListSuggestions(query) {
   })).filter(entry => entry.title);
 }
 
-async function fetchAniListMetadata(lookup = {}, options = {}) {
+async function fetchAniListMetadata(lookup = {}) {
   if (!lookup) return null;
-  const { notifyOnError = false, requestSource = 'metadata lookup' } = options || {};
-  const normalizedSource = requestSource || 'metadata lookup';
-  const baseContext = {
-    title: lookup.title || '',
-    year: lookup.year || '',
-    aniListId: lookup.aniListId || '',
-    source: normalizedSource,
-  };
   let anime = null;
   if (lookup.aniListId) {
-    anime = await fetchJikanAnimeDetails(lookup.aniListId, {
-      context: baseContext,
-      notifyOnError,
-    });
+    anime = await fetchJikanAnimeDetails(lookup.aniListId);
   }
   if (!anime && lookup.title) {
     const params = {
@@ -5872,19 +5053,9 @@ async function fetchAniListMetadata(lookup = {}, options = {}) {
         params.end_date = `${year}-12-31`;
       }
     }
-    const response = await fetchJikanJson('/anime', params);
-    const payload = response && response.ok ? response.data : null;
-    if (payload && Array.isArray(payload.data) && payload.data.length) {
-      const malId = payload.data[0].mal_id;
-      const searchContext = {
-        ...baseContext,
-        aniListId: malId,
-        source: `${normalizedSource} search`,
-      };
-      anime = await fetchJikanAnimeDetails(malId, {
-        context: searchContext,
-        notifyOnError,
-      });
+    const json = await fetchJikanJson('/anime', params);
+    if (json && Array.isArray(json.data) && json.data.length) {
+      anime = await fetchJikanAnimeDetails(json.data[0].mal_id);
     }
   }
   if (!anime) return null;
@@ -6090,10 +5261,8 @@ async function fetchAniListFranchisePlan({ aniListId, preferredSeriesName } = {}
   if (filtered.length <= 1) return null;
 
   filtered.sort(compareAnimeFranchiseEntries);
-  const totalEntries = filtered.length;
   filtered.forEach((entry, idx) => {
     entry.seriesOrder = idx + 1;
-    entry.seriesSize = totalEntries;
   });
   const seriesName = deriveAnimeSeriesName(filtered, preferredSeriesName);
   filtered.forEach(entry => {
@@ -6102,107 +5271,49 @@ async function fetchAniListFranchisePlan({ aniListId, preferredSeriesName } = {}
   return {
     seriesName,
     entries: filtered,
-    totalEntries,
   };
 }
 
-function buildAnimeSeasonEntriesFromPlan(plan, { includeFormats = ANIME_SEASON_FORMATS } = {}) {
-  if (!plan || !Array.isArray(plan.entries) || !plan.entries.length) return [];
-  const whitelist = includeFormats || ANIME_SEASON_FORMATS;
-  const seasons = plan.entries
-    .filter(entry => entry && entry.title)
-    .map(entry => {
-      const format = String(entry.format || '').toUpperCase();
-      if (whitelist && format && !whitelist.has(format)) return null;
-      const order = Number(entry.seriesOrder);
-      const episodes = Number(entry.episodes);
-      return {
-        order: Number.isFinite(order) ? order : null,
-        title: entry.title,
-        episodes: Number.isFinite(episodes) && episodes > 0 ? episodes : null,
-      };
-    })
-    .filter(Boolean);
-  seasons.sort((a, b) => {
-    const orderA = Number.isFinite(a.order) ? a.order : 9999;
-    const orderB = Number.isFinite(b.order) ? b.order : 9999;
-    if (orderA !== orderB) return orderA - orderB;
-    return (a.title || '').localeCompare(b.title || '');
-  });
-  return seasons.map((season, index) => ({
-    label: Number.isFinite(season.order) && season.order > 0
-      ? `Season ${season.order}`
-      : `Season ${index + 1}`,
-    title: season.title,
-    episodes: season.episodes,
-  }));
-}
-
-function applyAnimeSeasonEntriesToItem(target, entries) {
-  if (!target || !Array.isArray(entries) || !entries.length) return;
-  target.animeSeasonCount = entries.length;
-  target.animeSeasons = entries.map(entry => ({
-    label: entry.label,
-    title: entry.title,
-    episodes: entry.episodes ?? null,
-  }));
-}
-
 async function autoAddAnimeFranchiseEntries(plan, rootAniListId, selectedIds) {
-  if (!plan || !Array.isArray(plan.entries) || !plan.entries.length) return 0;
-  franchiseAutoAddInflight++;
-  setGlobalLoadingReason('franchiseAutoAdd', true);
-  try {
-    const rootId = rootAniListId ? Number(rootAniListId) : null;
-    const selectionSet = Array.isArray(selectedIds) && selectedIds.length
-      ? new Set(selectedIds.map(id => String(id)))
-      : null;
-    const totalSeriesEntries = Number.isFinite(plan.totalEntries) ? plan.totalEntries : plan.entries.length;
-    const seasonEntriesFromPlan = buildAnimeSeasonEntriesFromPlan(plan);
-    let addedCount = 0;
-    for (const entry of plan.entries) {
-      if (!entry || !entry.title) continue;
-      if (rootId && Number(entry.aniListId) === rootId) continue;
-      if (selectionSet && !selectionSet.has(String(entry.aniListId))) continue;
-      const payload = {
-        title: entry.title,
-        createdAt: Date.now(),
-        year: entry.year ? String(entry.year) : '',
-        seriesName: entry.seriesName || plan.seriesName || '',
-        seriesOrder: entry.seriesOrder ?? null,
-        seriesSize: Number.isFinite(entry.seriesSize) ? entry.seriesSize : totalSeriesEntries,
-        aniListId: entry.aniListId || null,
-        aniListUrl: entry.siteUrl || '',
-        animeFormat: entry.format || '',
-        animeEpisodes: entry.episodes ?? '',
-        animeDuration: entry.duration ?? '',
-        animeStatus: entry.status || '',
-        poster: entry.cover || '',
-        originalLanguage: 'Japanese',
-        originalLanguageIso: 'ja',
-      };
-      if (isDuplicateCandidate('anime', payload)) continue;
-      if (seasonEntriesFromPlan.length) {
-        applyAnimeSeasonEntriesToItem(payload, seasonEntriesFromPlan);
-      }
-      try {
-        await addItem('anime', payload);
-        addedCount++;
-      } catch (err) {
-        console.warn('Auto-add anime entry failed', entry.title, err);
-      }
+  if (!plan || !Array.isArray(plan.entries) || !plan.entries.length) return;
+  const rootId = rootAniListId ? Number(rootAniListId) : null;
+  const selectionSet = Array.isArray(selectedIds) && selectedIds.length
+    ? new Set(selectedIds.map(id => String(id)))
+    : null;
+  let addedCount = 0;
+  for (const entry of plan.entries) {
+    if (!entry || !entry.title) continue;
+    if (rootId && Number(entry.aniListId) === rootId) continue;
+    if (selectionSet && !selectionSet.has(String(entry.aniListId))) continue;
+    const payload = {
+      title: entry.title,
+      createdAt: Date.now(),
+      year: entry.year ? String(entry.year) : '',
+      seriesName: entry.seriesName || plan.seriesName || '',
+      seriesOrder: entry.seriesOrder ?? null,
+      seriesSize: plan.entries.length,
+      aniListId: entry.aniListId || null,
+      aniListUrl: entry.siteUrl || '',
+      animeFormat: entry.format || '',
+      animeEpisodes: entry.episodes ?? '',
+      animeDuration: entry.duration ?? '',
+      animeStatus: entry.status || '',
+      poster: entry.cover || '',
+      originalLanguage: 'Japanese',
+      originalLanguageIso: 'ja',
+    };
+    if (isDuplicateCandidate('anime', payload)) continue;
+    try {
+      await addItem('anime', payload);
+      addedCount++;
+    } catch (err) {
+      console.warn('Auto-add anime entry failed', entry.title, err);
     }
-    if (addedCount > 0) {
-      try {
-        console.info(`[MyAnimeList] Auto-added ${addedCount} related anime entries for "${plan.seriesName}"`);
-      } catch (_) {}
-    }
-    return addedCount;
-  } finally {
-    franchiseAutoAddInflight = Math.max(0, franchiseAutoAddInflight - 1);
-    if (franchiseAutoAddInflight === 0) {
-      setGlobalLoadingReason('franchiseAutoAdd', false);
-    }
+  }
+  if (addedCount > 0) {
+    try {
+      console.info(`[MyAnimeList] Auto-added ${addedCount} related anime entries for "${plan.seriesName}"`);
+    } catch (_) {}
   }
 }
 
@@ -6210,6 +5321,14 @@ function getAniListIdFromItem(item) {
   if (!item) return '';
   const value = item.aniListId || item.anilistId || item.AniListId || (item.metadata && (item.metadata.AniListId || item.metadata.anilistId));
   return value ? String(value) : '';
+}
+
+function computeAnimeDatasetSignature(data) {
+  const ids = Object.values(data || {})
+    .map(item => getAniListIdFromItem(item))
+    .filter(Boolean)
+    .sort();
+  return ids.join(',');
 }
 
 function buildAnimeFranchiseSeriesMap(data) {
@@ -6240,17 +5359,18 @@ function buildAnimeFranchiseSeriesMap(data) {
 
 function scheduleAnimeFranchiseScan(data) {
   pendingAnimeScanData = data;
+  const signature = computeAnimeDatasetSignature(data);
   const now = Date.now();
-  const elapsed = now - animeFranchiseLastScanTime;
-  const shouldRun = !animeFranchiseLastScanTime || elapsed >= ANIME_FRANCHISE_RESCAN_INTERVAL_MS;
+  const shouldRun = signature !== animeFranchiseLastScanSignature
+    || (now - animeFranchiseLastScanTime) > ANIME_FRANCHISE_RESCAN_INTERVAL_MS;
   if (!shouldRun) return;
+  animeFranchiseLastScanSignature = signature;
   if (animeFranchiseScanTimer) {
     clearTimeout(animeFranchiseScanTimer);
   }
   animeFranchiseScanTimer = setTimeout(() => {
     animeFranchiseScanTimer = null;
     animeFranchiseLastScanTime = Date.now();
-    safeLocalStorageSet(ANIME_FRANCHISE_LAST_SCAN_KEY, animeFranchiseLastScanTime);
     runAnimeFranchiseScan(pendingAnimeScanData);
   }, 1000);
 }
@@ -6298,10 +5418,7 @@ async function runAnimeFranchiseScan(data) {
       const previousHash = animeFranchiseMissingHashes.get(seriesKey);
       if (previousHash === missingHash) continue;
       animeFranchiseMissingHashes.set(seriesKey, missingHash);
-      showAnimeFranchiseNotification(plan.seriesName || info.seriesName, missingEntries, {
-        plan,
-        rootAniListId: aniListId,
-      });
+      showAnimeFranchiseNotification(plan.seriesName || info.seriesName, missingEntries);
     }
   } finally {
     animeFranchiseScanInflight = false;
@@ -6634,19 +5751,4 @@ async function autoAddTmdbKeywordEntries(franchiseLabel, keywordInfo, entries, o
     }
   }
 }
-
-// Boot
-initFirebase();
-if (auth) {
-  handleAuthState();
-  handleSignInRedirectResult();
-} else {
-  try {
-    handleAuthState();
-    handleSignInRedirectResult();
-  } catch(e) { /* silent */ }
-}
-
-tmEasterEgg.bindTriggers();
-initUnifiedLibraryControls();
 

@@ -24,24 +24,6 @@
         <div class="user-info">
           <span id="user-name"></span>
           <button id="back-to-top" class="btn ghost hidden" type="button">Back to top</button>
-          <div class="notification-menu" data-role="notification-menu">
-            <button id="notification-bell" class="icon-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="notification-dropdown">
-              <span class="sr-only">Open notifications</span>
-              <svg class="bell-icon" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
-                <path d="M12 3a6 6 0 0 0-6 6v3.382l-.764 1.914A1 1 0 0 0 6.17 16h11.66a1 1 0 0 0 .934-1.704L18 12.382V9a6 6 0 0 0-6-6Zm0 18a2.5 2.5 0 0 1-2.45-2h4.9A2.5 2.5 0 0 1 12 21Z" fill="currentColor"/>
-              </svg>
-              <span class="notification-dot" aria-hidden="true" hidden></span>
-            </button>
-            <div id="notification-dropdown" class="notification-dropdown" role="dialog" aria-label="Notifications">
-              <div class="notification-dropdown-header">
-                <h4>Notifications</h4>
-                <button type="button" class="text-button" data-notification-clear>Clear all</button>
-              </div>
-              <div id="notification-dropdown-list" class="notification-dropdown-list" role="listbox">
-                <p class="empty-state" data-empty-state>No notifications yet.</p>
-              </div>
-            </div>
-          </div>
           <button id="sign-out" class="btn secondary">Sign out</button>
         </div>
       </header>
@@ -151,10 +133,9 @@
                     <h3>Wheel Spinner</h3>
                     <button type="button" class="btn ghost" data-wheel-close>Close</button>
                   </div>
-                  <p class="small">Choose a list (or spin them all), then spin to get a random pick.</p>
+                  <p class="small">Choose a list, then spin to get a random pick.</p>
                   <div class="spinner-controls">
                     <select data-wheel-source>
-                      <option value="all">All Lists</option>
                       <option value="movies">Movies</option>
                       <option value="tvShows">TV Shows</option>
                       <option value="anime">Anime</option>
@@ -185,7 +166,6 @@
                 <button type="button" class="type-filter active" data-type-toggle="books" aria-pressed="true">Books</button>
               </div>
             </div>
-            <div id="library-summary" class="library-summary-card" aria-live="polite" aria-atomic="true"></div>
             <div class="list" id="combined-list">
               <div class="small">Loading your library...</div>
             </div>
@@ -204,15 +184,7 @@
         <span class="intro-text">THE LIST</span>
         <span class="intro-tm">TM</span>
       </div>
-      <div id="global-loading-overlay" class="global-loading-overlay hidden" aria-live="assertive" aria-atomic="true" aria-hidden="true">
-        <div class="global-loading-panel" role="status">
-          <div class="global-loading-spinner" aria-hidden="true"></div>
-          <p class="global-loading-message" data-overlay-message>Working...</p>
-        </div>
-      </div>
     </div>
-
-    <div id="tm-rain-layer" aria-hidden="true"></div>
 
     <script type="module" src="app.js"></script>
   </body>
