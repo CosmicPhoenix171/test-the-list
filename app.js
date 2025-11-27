@@ -1496,7 +1496,6 @@ class VirtualizedCardGrid {
     this.rangeEnd = 0;
     this.rowHeight = this.options.estimatedItemHeight;
     this.itemsPerRow = 1;
-    this.pendingMeasureFrame = null;
     this.topSpacer = createEl('div', 'virtual-spacer');
     this.viewport = createEl('div', 'virtualized-viewport movies-grid unified-grid');
     this.bottomSpacer = createEl('div', 'virtual-spacer');
@@ -1517,10 +1516,6 @@ class VirtualizedCardGrid {
   destroy() {
     window.removeEventListener('scroll', this.handleScroll);
     window.removeEventListener('resize', this.handleResize);
-    if (this.pendingMeasureFrame) {
-      cancelAnimationFrame(this.pendingMeasureFrame);
-      this.pendingMeasureFrame = null;
-    }
     if (this.container) {
       this.container.classList.remove('virtualized-container');
       this.container.innerHTML = '';
@@ -1533,6 +1528,8 @@ class VirtualizedCardGrid {
     this.rangeStart = 0;
     this.rangeEnd = 0;
     this.refreshSpacers();
+    this.updateVisibleRange(true);
+    this.measureFromViewport(true);
     this.updateVisibleRange(true);
   }
 
@@ -1582,7 +1579,6 @@ class VirtualizedCardGrid {
         this.viewport.appendChild(node);
       }
     }
-    this.measureFromViewport();
   }
 
   measureFromViewport(force = false) {
@@ -1605,17 +1601,6 @@ class VirtualizedCardGrid {
     this.itemsPerRow = columns;
     this.rowHeight = normalizedRowHeight;
     this.refreshSpacers();
-    this.scheduleReflow();
-  }
-
-  scheduleReflow() {
-    if (this.pendingMeasureFrame) {
-      cancelAnimationFrame(this.pendingMeasureFrame);
-    }
-    this.pendingMeasureFrame = requestAnimationFrame(() => {
-      this.pendingMeasureFrame = null;
-      this.updateVisibleRange(true);
-    });
   }
 }
 
