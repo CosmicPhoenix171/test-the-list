@@ -1161,8 +1161,19 @@ function markNotificationSignatureSeen(signature) {
 
 function initNotificationBell() {
   if (!notificationBellBtn || !notificationCenter) return;
+  notificationSignatureCache = loadNotificationSignatures();
   persistedNotifications = loadStoredNotifications();
   persistedNotifications.forEach(record => renderNotificationCard(record));
+  let signatureAdded = false;
+  persistedNotifications.forEach(record => {
+    if (record.signature && !notificationSignatureCache.has(record.signature)) {
+      notificationSignatureCache.add(record.signature);
+      signatureAdded = true;
+    }
+  });
+  if (signatureAdded) {
+    persistNotificationSignatures();
+  }
   notificationBellBtn.addEventListener('click', () => {
     toggleNotificationPopover();
   });
