@@ -1424,6 +1424,9 @@ function ensureUnifiedPlaceholderRendered(placeholder) {
   const index = Number(placeholder.dataset.index);
   const record = unifiedVirtualRecords[index];
   if (!record) return;
+  try {
+    console.log('[Unified] rendering placeholder', index, record.item?.title || record.cardId);
+  } catch (_) {}
   const node = buildUnifiedCardNode(record);
   placeholder.innerHTML = '';
   placeholder.appendChild(node);
@@ -1507,6 +1510,10 @@ function primeInitialUnifiedPlaceholders(grid) {
   if (!grid) return;
   const placeholders = Array.from(grid.querySelectorAll('.unified-card-placeholder')).slice(0, UNIFIED_INITIAL_RENDER_COUNT);
   placeholders.forEach(ensureUnifiedPlaceholderRendered);
+  try {
+    const renderedCount = placeholders.filter(p => p.dataset.rendered === '1').length;
+    console.log('[Unified] prime rendered', renderedCount);
+  } catch (_) {}
   scheduleUnifiedVisibilityCheck();
 }
 
