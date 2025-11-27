@@ -88,8 +88,8 @@ h1{margin:0 0 .35rem 0;font-size:1.8rem;letter-spacing:.4px}
 .library-stat-chip:nth-child(2){animation-delay:.15s}
 .library-stat-chip:nth-child(3){animation-delay:.25s}
 .library-stat-chip .library-stat-value{font-size:1.05rem;font-weight:700;color:var(--text-100);letter-spacing:normal;text-transform:none}
-.library-stat-chip.runtime{min-width:160px;background:linear-gradient(120deg,rgba(80,201,255,0.16),rgba(125,242,201,0.12));border-color:rgba(125,242,201,0.35);box-shadow:0 10px 26px rgba(80,201,255,0.28);transition:background .4s ease,border-color .4s ease,box-shadow .4s ease}
-.library-stat-chip.runtime .library-stat-value{color:#e4fbff}
+.library-stat-chip.runtime{min-width:220px;background:linear-gradient(120deg,rgba(80,201,255,0.16),rgba(125,242,201,0.12));border-color:rgba(125,242,201,0.35);box-shadow:0 10px 26px rgba(80,201,255,0.28);transition:background .4s ease,border-color .4s ease,box-shadow .4s ease}
+.library-stat-chip.runtime .library-stat-value{color:#e4fbff;font-variant-numeric:tabular-nums;min-width:14ch}
 .library-stat-chip.runtime-minutes{background:linear-gradient(120deg,rgba(80,201,255,0.2),rgba(100,210,255,0.15));border-color:rgba(80,201,255,0.45);box-shadow:0 10px 26px rgba(80,201,255,0.35)}
 .library-stat-chip.runtime-minutes .library-stat-value{color:#a8e6ff}
 .library-stat-chip.runtime-hours{background:linear-gradient(120deg,rgba(125,242,201,0.18),rgba(80,220,180,0.14));border-color:rgba(125,242,201,0.45);box-shadow:0 10px 26px rgba(125,242,201,0.32)}
