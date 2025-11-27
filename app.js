@@ -141,6 +141,15 @@ const RUNTIME_THRESHOLDS = {
   YEARS: { color: 'years', label: 'years' }
 };
 
+const RUNTIME_PILL_UNITS = [
+  { key: 'minutes', label: 'Minutes' },
+  { key: 'hours', label: 'Hours' },
+  { key: 'days', label: 'Days' },
+  { key: 'weeks', label: 'Weeks' },
+  { key: 'months', label: 'Months' },
+  { key: 'years', label: 'Years' }
+];
+
 function getDisplayCacheMap() {
   return showFinishedOnly ? finishedCaches : listCaches;
 }
