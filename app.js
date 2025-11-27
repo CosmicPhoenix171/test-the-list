@@ -194,19 +194,78 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
   const valueEl = chipElement.querySelector('.library-stat-value');
   if (!valueEl) return;
   
-  const TARGET_DURATION_MS = 5000;
+  const TARGET_SECTION_DURATION_MS = 5000;
   const FPS = 60;
-  const TOTAL_FRAMES = (TARGET_DURATION_MS / 1000) * FPS;
+  const FRAMES_PER_SECTION = (TARGET_SECTION_DURATION_MS / 1000) * FPS;
   
   const breakdown = breakdownDurationMinutes(finalMinutes);
-  const maxValues = {
-    minutes: 60,
-    hours: 24,
-    days: 7,
-    weeks: 4,
-    months: 12,
-    years: breakdown.years
+  let { years, months, days, hours, minutes } = breakdown;
+  let weeks = 0;
+  if (days >= 7) {
+    weeks = Math.floor(days / 7);
+    days = days % 7;
+  }
+  
+  const sequence = [];
+  
+  // Build sequence: Minutes -> Hours -> Days -> Weeks -> Months -> Years
+  // Only add units if they are relevant (i.e. total duration reaches them)
+  // For intermediate units, target is max capacity. For final unit, target is actual value.
+  
+  if (finalMinutes > 0) {
+    sequence.push({ 
+      unit: 'minutes', 
+      max: 60, 
+      target: (finalMinutes >= 60) ? 60 : minutes 
+    });
+  }
+  
+  if (finalMinutes >= 60) {
+    sequence.push({ 
+      unit: 'hours', 
+      max: 24, 
+      target: (finalMinutes >= 1440) ? 24 : hours 
+    });
+  }
+  
+  if (finalMinutes >= 1440) {
+    sequence.push({ 
+      unit: 'days', 
+      max: 7, 
+      target: (finalMinutes >= 10080) ? 7 : days 
+    });
+  }
+  
+  if (finalMinutes >= 10080) {
+    sequence.push({ 
+      unit: 'weeks', 
+      max: 4, 
+      target: (finalMinutes >= 43200) ? 4 : weeks 
+    });
+  }
+  
+  if (finalMinutes >= 43200) {
+    sequence.push({ 
+      unit: 'months', 
+      max: 12, 
+      target: (finalMinutes >= 525600) ? 12 : months 
+    });
+  }
+  
+  if (finalMinutes >= 525600) {
+    sequence.push({ 
+      unit: 'years', 
+      max: years, 
+      target: years 
+    });
+  }
+  
+  let animationState = {
+    years: 0, months: 0, weeks: 0, days: 0, hours: 0, minutes: 0
   };
+  
+  let activeStageIndex = 0;
+  let currentFrame = 0;
   
   const thresholds = [
     { max: 60, class: 'runtime-minutes' },
@@ -216,102 +275,69 @@ function animateRuntimeProgression(chipElement, finalMinutes) {
     { max: 525600, class: 'runtime-months' },
     { max: Infinity, class: 'runtime-years' }
   ];
-  
-  let animationState = {
-    years: 0,
-    months: 0,
-    weeks: 0,
-    days: 0,
-    hours: 0,
-    minutes: 0
-  };
-  
-  const increments = {
-    years: breakdown.years / TOTAL_FRAMES,
-    months: maxValues.months / TOTAL_FRAMES,
-    weeks: maxValues.weeks / TOTAL_FRAMES,
-    days: maxValues.days / TOTAL_FRAMES,
-    hours: maxValues.hours / TOTAL_FRAMES,
-    minutes: maxValues.minutes / TOTAL_FRAMES
-  };
-  
+
   function updateFrame() {
-    const totalMinutesInBreakdown = 
-      breakdown.years * 525600 +
-      breakdown.months * 43200 +
-      Math.floor((breakdown.days % 28) / 7) * 10080 +
-      (breakdown.days % 7) * 1440 +
-      breakdown.hours * 60 +
-      breakdown.minutes;
-    
-    animationState.minutes += increments.minutes;
-    if (animationState.minutes >= maxValues.minutes && totalMinutesInBreakdown >= 60) {
-      animationState.minutes = 0;
-      animationState.hours += increments.hours;
-    }
-    if (animationState.hours >= maxValues.hours && totalMinutesInBreakdown >= 1440) {
-      animationState.hours = 0;
-      animationState.days += increments.days;
-    }
-    if (animationState.days >= maxValues.days && totalMinutesInBreakdown >= 10080) {
-      animationState.days = 0;
-      animationState.weeks += increments.weeks;
-    }
-    if (animationState.weeks >= maxValues.weeks && totalMinutesInBreakdown >= 43200) {
-      animationState.weeks = 0;
-      animationState.months += increments.months;
-    }
-    if (animationState.months >= maxValues.months && totalMinutesInBreakdown >= 525600) {
-      animationState.months = 0;
-      animationState.years += increments.years;
-    }
-    
-    const currentTotalMinutes = 
-      animationState.years * 525600 +
-      animationState.months * 43200 +
-      animationState.weeks * 10080 +
-      animationState.days * 1440 +
-      animationState.hours * 60 +
-      animationState.minutes;
-    
-    const thresholdIndex = thresholds.findIndex(t => currentTotalMinutes < t.max);
-    if (thresholdIndex >= 0) {
-      thresholds.forEach(t => chipElement.classList.remove(t.class));
-      chipElement.classList.add(thresholds[thresholdIndex].class);
-    }
-    
-    const displayBreakdown = {
-      years: Math.floor(animationState.years),
-      months: Math.floor(animationState.months),
-      weeks: Math.floor(animationState.weeks),
-      days: Math.floor(animationState.days),
-      hours: Math.floor(animationState.hours),
-      minutes: Math.floor(animationState.minutes)
-    };
-    
-    const parts = [];
-    const hasYears = displayBreakdown.years > 0 || breakdown.years > 0;
-    const hasMonths = displayBreakdown.months > 0 || breakdown.months > 0;
-    const hasWeeks = displayBreakdown.weeks > 0 || (breakdown.days >= 7);
-    const hasDays = displayBreakdown.days > 0 || breakdown.days > 0;
-    const hasHours = displayBreakdown.hours > 0 || breakdown.hours > 0;
-    
-    if (hasYears) parts.push(formatDurationUnit(displayBreakdown.years, 'year'));
-    if (hasMonths) parts.push(formatDurationUnit(displayBreakdown.months, 'month', hasYears && displayBreakdown.years > 0));
-    if (hasWeeks) parts.push(formatDurationUnit(displayBreakdown.weeks, 'week', (hasMonths && displayBreakdown.months > 0) || (hasYears && displayBreakdown.years > 0)));
-    if (hasDays) parts.push(formatDurationUnit(displayBreakdown.days, 'day', (hasWeeks && displayBreakdown.weeks > 0) || (hasMonths && displayBreakdown.months > 0) || (hasYears && displayBreakdown.years > 0)));
-    if (hasHours) parts.push(formatDurationUnit(displayBreakdown.hours, 'hour', (hasDays && displayBreakdown.days > 0) || (hasWeeks && displayBreakdown.weeks > 0) || (hasMonths && displayBreakdown.months > 0) || (hasYears && displayBreakdown.years > 0)));
-    parts.push(formatDurationUnit(displayBreakdown.minutes, 'minute', (hasHours && displayBreakdown.hours > 0) || (hasDays && displayBreakdown.days > 0) || (hasWeeks && displayBreakdown.weeks > 0) || (hasMonths && displayBreakdown.months > 0) || (hasYears && displayBreakdown.years > 0)));
-    
-    valueEl.innerHTML = parts.join(', ');
-    
-    if (currentTotalMinutes < finalMinutes) {
-      requestAnimationFrame(updateFrame);
-    } else {
+    if (activeStageIndex >= sequence.length) {
       valueEl.innerHTML = formatRuntimeDurationDetailed(finalMinutes);
       thresholds.forEach(t => chipElement.classList.remove(t.class));
       chipElement.classList.add(getRuntimeThresholdClass(finalMinutes));
+      return;
     }
+    
+    const stage = sequence[activeStageIndex];
+    currentFrame++;
+    const progress = Math.min(currentFrame / FRAMES_PER_SECTION, 1);
+    
+    // Update current unit
+    animationState[stage.unit] = progress * stage.target;
+    
+    // Update color
+    let currentClass = 'runtime-minutes';
+    if (stage.unit === 'hours') currentClass = 'runtime-hours';
+    if (stage.unit === 'days') currentClass = 'runtime-days';
+    if (stage.unit === 'weeks') currentClass = 'runtime-weeks';
+    if (stage.unit === 'months') currentClass = 'runtime-months';
+    if (stage.unit === 'years') currentClass = 'runtime-years';
+    
+    thresholds.forEach(t => chipElement.classList.remove(t.class));
+    chipElement.classList.add(currentClass);
+    
+    // Render
+    const displayValues = {
+        years: Math.floor(animationState.years),
+        months: Math.floor(animationState.months),
+        weeks: Math.floor(animationState.weeks),
+        days: Math.floor(animationState.days),
+        hours: Math.floor(animationState.hours),
+        minutes: Math.floor(animationState.minutes)
+    };
+    
+    const parts = [];
+    const hasYears = displayValues.years > 0;
+    const hasMonths = displayValues.months > 0 || hasYears;
+    const hasWeeks = displayValues.weeks > 0 || hasMonths;
+    const hasDays = displayValues.days > 0 || hasWeeks;
+    const hasHours = displayValues.hours > 0 || hasDays;
+    
+    if (hasYears) parts.push(formatDurationUnit(displayValues.years, 'year'));
+    if (hasMonths) parts.push(formatDurationUnit(displayValues.months, 'month', hasYears));
+    if (hasWeeks) parts.push(formatDurationUnit(displayValues.weeks, 'week', hasMonths));
+    if (hasDays) parts.push(formatDurationUnit(displayValues.days, 'day', hasWeeks));
+    if (hasHours) parts.push(formatDurationUnit(displayValues.hours, 'hour', hasDays));
+    parts.push(formatDurationUnit(displayValues.minutes, 'minute', hasHours));
+    
+    valueEl.innerHTML = parts.join(', ');
+    
+    if (progress >= 1) {
+      // Stage done. If not last stage, reset to 0 (wrap effect)
+      if (activeStageIndex < sequence.length - 1) {
+          animationState[stage.unit] = 0;
+      }
+      activeStageIndex++;
+      currentFrame = 0;
+    }
+    
+    requestAnimationFrame(updateFrame);
   }
   
   setTimeout(() => requestAnimationFrame(updateFrame), 300);
@@ -3563,17 +3589,28 @@ function formatRuntimeDuration(totalMinutes) {
 function formatRuntimeDurationDetailed(totalMinutes) {
   if (!totalMinutes || totalMinutes <= 0) return '';
   const breakdown = breakdownDurationMinutes(totalMinutes);
+  
+  // Extract weeks from days
+  let weeks = 0;
+  if (breakdown.days >= 7) {
+    weeks = Math.floor(breakdown.days / 7);
+    breakdown.days = breakdown.days % 7;
+  }
+  breakdown.weeks = weeks;
+
   const parts = [];
   const hasYears = breakdown.years > 0;
   const hasMonths = breakdown.months > 0;
+  const hasWeeks = breakdown.weeks > 0;
   const hasDays = breakdown.days > 0;
   const hasHours = breakdown.hours > 0;
   
   if (hasYears) parts.push(formatDurationUnit(breakdown.years, 'year'));
   if (hasMonths || hasYears) parts.push(formatDurationUnit(breakdown.months, 'month', hasYears));
-  if (hasDays || hasMonths || hasYears) parts.push(formatDurationUnit(breakdown.days, 'day', hasMonths || hasYears));
-  if (hasHours || hasDays || hasMonths || hasYears) parts.push(formatDurationUnit(breakdown.hours, 'hour', hasDays || hasMonths || hasYears));
-  parts.push(formatDurationUnit(breakdown.minutes, 'minute', hasHours || hasDays || hasMonths || hasYears));
+  if (hasWeeks || hasMonths || hasYears) parts.push(formatDurationUnit(breakdown.weeks, 'week', hasMonths || hasYears));
+  if (hasDays || hasWeeks || hasMonths || hasYears) parts.push(formatDurationUnit(breakdown.days, 'day', hasWeeks || hasMonths || hasYears));
+  if (hasHours || hasDays || hasWeeks || hasMonths || hasYears) parts.push(formatDurationUnit(breakdown.hours, 'hour', hasDays || hasWeeks || hasMonths || hasYears));
+  parts.push(formatDurationUnit(breakdown.minutes, 'minute', hasHours || hasDays || hasWeeks || hasMonths || hasYears));
   
   if (!parts.length) {
     return 'Less than a minute';
