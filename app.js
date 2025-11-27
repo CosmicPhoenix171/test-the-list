@@ -1540,6 +1540,82 @@ function renderUnifiedLibrary() {
   }
 }
 
+class VirtualizedCardGrid {
+  constructor(container, options = {}) {
+    this.container = container;
+    this.options = Object.assign({ estimatedItemHeight: 360, overscan: 6, renderItem: () => null }, options);
+    this.entries = [];
+    this.rangeStart = 0;
+    this.rangeEnd = 0;
+    this.topSpacer = createEl('div', 'virtual-spacer');
+    this.viewport = createEl('div', 'virtualized-viewport movies-grid unified-grid');
+    this.bottomSpacer = createEl('div', 'virtual-spacer');
+    this.container.innerHTML = '';
+    this.container.classList.add('virtualized-container');
+    this.container.appendChild(this.topSpacer);
+    this.container.appendChild(this.viewport);
+    this.container.appendChild(this.bottomSpacer);
+    this.handleScroll = this.updateVisibleRange.bind(this);
+    window.addEventListener('scroll', this.handleScroll, { passive: true });
+    window.addEventListener('resize', this.handleScroll, { passive: true });
+  }
+
+  destroy() {
+    window.removeEventListener('scroll', this.handleScroll);
+    window.removeEventListener('resize', this.handleScroll);
+    if (this.container) {
+      this.container.classList.remove('virtualized-container');
+      this.container.innerHTML = '';
+    }
+    this.entries = [];
+  }
+
+  setEntries(entries) {
+    this.entries = Array.isArray(entries) ? entries : [];
+    this.rangeStart = 0;
+    this.rangeEnd = 0;
+    this.refreshSpacers();
+    this.updateVisibleRange(true);
+  }
+
+  refreshSpacers() {
+    const totalHeight = Math.max(0, this.entries.length * this.options.estimatedItemHeight);
+    this.topSpacer.style.height = '0px';
+    this.bottomSpacer.style.height = `${totalHeight}px`;
+  }
+
+  updateVisibleRange(force = false) {
+    if (!this.container || !this.entries.length) {
+      if (this.viewport) this.viewport.innerHTML = '';
+      this.refreshSpacers();
+      return;
+    }
+    const containerRect = this.container.getBoundingClientRect();
+    const containerTop = containerRect.top + window.scrollY;
+    const viewportHeight = window.innerHeight;
+    const scrollTop = Math.max(0, window.scrollY - containerTop);
+    const itemHeight = this.options.estimatedItemHeight;
+    const overscan = this.options.overscan;
+    const start = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
+    const end = Math.min(this.entries.length, Math.ceil((scrollTop + viewportHeight) / itemHeight) + overscan);
+    if (!force && start === this.rangeStart && end === this.rangeEnd) {
+      return;
+    }
+    this.rangeStart = start;
+    this.rangeEnd = end;
+    this.topSpacer.style.height = `${start * itemHeight}px`;
+    this.bottomSpacer.style.height = `${Math.max(0, (this.entries.length - end) * itemHeight)}px`;
+    this.viewport.innerHTML = '';
+    for (let i = start; i < end; i++) {
+      const entry = this.entries[i];
+      const node = this.options.renderItem(entry, i);
+      if (node) {
+        this.viewport.appendChild(node);
+      }
+    }
+  }
+}
+
 function ensureCombinedVirtualGrid() {
   if (!combinedListEl) return null;
   if (!combinedVirtualGrid) {
@@ -4861,107 +4937,35 @@ function buildRelatedModal(currentItem, related) {
       row.style.alignItems = 'center';
       row.style.gap = '.5rem';
       row.style.background = 'var(--card-bg)';
-
-class VirtualizedCardGrid {
-  constructor(container, options = {}) {
-    this.container = container;
-    this.options = Object.assign({ estimatedItemHeight: 360, overscan: 6, renderItem: () => null }, options);
-    this.entries = [];
-    this.rangeStart = 0;
-    this.rangeEnd = 0;
-    this.topSpacer = createEl('div', 'virtual-spacer');
-    this.viewport = createEl('div', 'virtualized-viewport movies-grid unified-grid');
-    this.bottomSpacer = createEl('div', 'virtual-spacer');
-    this.container.innerHTML = '';
-    this.container.classList.add('virtualized-container');
-    this.container.appendChild(this.topSpacer);
-    this.container.appendChild(this.viewport);
-    this.container.appendChild(this.bottomSpacer);
-    this.handleScroll = this.updateVisibleRange.bind(this);
-    window.addEventListener('scroll', this.handleScroll, { passive: true });
-    window.addEventListener('resize', this.handleScroll, { passive: true });
-  }
-
-  destroy() {
-    window.removeEventListener('scroll', this.handleScroll);
-    window.removeEventListener('resize', this.handleScroll);
-    if (this.container) {
-      this.container.classList.remove('virtualized-container');
-      this.container.innerHTML = '';
-    }
-    this.entries = [];
-  }
-
-  setEntries(entries) {
-    this.entries = Array.isArray(entries) ? entries : [];
-    this.rangeStart = 0;
-    this.rangeEnd = 0;
-    this.refreshSpacers();
-    this.updateVisibleRange(true);
-  }
-
-  refreshSpacers() {
-    const totalHeight = Math.max(0, this.entries.length * this.options.estimatedItemHeight);
-    this.topSpacer.style.height = '0px';
-    this.bottomSpacer.style.height = `${totalHeight}px`;
-  }
-
-  updateVisibleRange(force = false) {
-    if (!this.container || !this.entries.length) {
-      if (this.viewport) this.viewport.innerHTML = '';
-      this.refreshSpacers();
-      return;
-    }
-    const containerRect = this.container.getBoundingClientRect();
-    const containerTop = containerRect.top + window.scrollY;
-    const viewportHeight = window.innerHeight;
-    const scrollTop = Math.max(0, window.scrollY - containerTop);
-    const itemHeight = this.options.estimatedItemHeight;
-    const overscan = this.options.overscan;
-    const start = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
-    const end = Math.min(this.entries.length, Math.ceil((scrollTop + viewportHeight) / itemHeight) + overscan);
-    if (!force && start === this.rangeStart && end === this.rangeEnd) {
-      return;
-    }
-    this.rangeStart = start;
-    this.rangeEnd = end;
-    this.topSpacer.style.height = `${start * itemHeight}px`;
-    this.bottomSpacer.style.height = `${Math.max(0, (this.entries.length - end) * itemHeight)}px`;
-    this.viewport.innerHTML = '';
-    for (let i = start; i < end; i++) {
-      const entry = this.entries[i];
-      const node = this.options.renderItem(entry, i);
-      if (node) {
-        this.viewport.appendChild(node);
-      }
-    }
-  }
-}
       row.style.padding = '.5rem .75rem';
       row.style.borderRadius = '6px';
-        const title = document.createElement('div');
-        const displayTitle = r.Title || r.title || '(untitled)';
-        const displayYear = r.Year || r.year || '';
-        title.textContent = displayTitle + (displayYear ? ` (${displayYear})` : '');
+
+      const title = document.createElement('div');
+      const displayTitle = r.Title || r.title || '(untitled)';
+      const displayYear = r.Year || r.year || '';
+      title.textContent = displayTitle + (displayYear ? ` (${displayYear})` : '');
       row.appendChild(title);
-        if (r.imdbID || r.imdbId) {
-          const imdbLink = document.createElement('a');
-          imdbLink.href = `https://www.imdb.com/title/${(r.imdbID || r.imdbId)}/`;
-          imdbLink.target = '_blank';
-          imdbLink.rel = 'noopener noreferrer';
-          imdbLink.textContent = 'IMDb';
-          imdbLink.className = 'meta-link';
-          row.appendChild(imdbLink);
-        }
-        if (r.id && r.tmdb) {
-          const tmdbLink = document.createElement('a');
-          tmdbLink.href = `https://www.themoviedb.org/movie/${r.id}`;
-          tmdbLink.target = '_blank';
-          tmdbLink.rel = 'noopener noreferrer';
-          tmdbLink.textContent = 'TMDb';
-          tmdbLink.className = 'meta-link';
-          row.appendChild(tmdbLink);
-        }
+
+      if (r.imdbID || r.imdbId) {
+        const imdbLink = document.createElement('a');
+        imdbLink.href = `https://www.imdb.com/title/${(r.imdbID || r.imdbId)}/`;
+        imdbLink.target = '_blank';
+        imdbLink.rel = 'noopener noreferrer';
+        imdbLink.textContent = 'IMDb';
+        imdbLink.className = 'meta-link';
+        row.appendChild(imdbLink);
+      }
+
+      if (r.id && r.tmdb) {
+        const tmdbLink = document.createElement('a');
+        tmdbLink.href = `https://www.themoviedb.org/movie/${r.id}`;
+        tmdbLink.target = '_blank';
+        tmdbLink.rel = 'noopener noreferrer';
+        tmdbLink.textContent = 'TMDb';
+        tmdbLink.className = 'meta-link';
+        row.appendChild(tmdbLink);
+      }
+
       list.appendChild(row);
     });
   }
