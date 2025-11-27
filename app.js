@@ -129,6 +129,18 @@ const alphabetGateState = {
   activeSet: new Set(),
 };
 
+// ============================================================================
+// Feature Map (grouped by responsibilities)
+// 1. Auth & Session Flow
+// 2. Add Modal & Item Management
+// 3. List Loading & Collapsible Cards
+// 4. Unified Library & Virtualized Grid
+// 5. Metadata & External API Pipelines
+// 6. Spinner / Wheel Experience
+// 7. Anime Franchise Automations
+// 8. Utility Helpers & Shared Formatters
+// ============================================================================
+
 // DOM references
 const loginScreen = document.getElementById('login-screen');
 const googleSigninBtn = document.getElementById('google-signin');
@@ -422,6 +434,10 @@ let auth = null;
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
+// ============================================================================
+// Feature 1: Auth & Session Flow
+// ============================================================================
+
 // Initialize Firebase and services
 function initFirebase() {
   if (appInitialized) return;
@@ -473,6 +489,10 @@ function initFirebase() {
     updateBackToTopVisibility();
   }
 }
+
+// ============================================================================
+// Feature 2: Add Modal & Item Management
+// ============================================================================
 
 function setupAddModal() {
   if (!addModalTrigger || !modalRoot) return;
@@ -614,107 +634,6 @@ function setActiveAddModalType(listType) {
       button.setAttribute('aria-pressed', 'false');
     }
   });
-}
-
-function setupWheelModal() {
-  if (!wheelModalTrigger || !wheelModalTemplate || !modalRoot) return;
-  wheelModalTrigger.addEventListener('click', () => openWheelModal());
-}
-
-function openWheelModal() {
-  if (!wheelModalTemplate || !modalRoot) return;
-  closeAddModal();
-  closeWheelModal();
-  const backdrop = document.createElement('div');
-  backdrop.className = 'modal-backdrop wheel-modal-backdrop';
-  const modal = document.createElement('div');
-  modal.className = 'modal wheel-modal';
-  const fragment = wheelModalTemplate.content.cloneNode(true);
-  modal.appendChild(fragment);
-  backdrop.appendChild(modal);
-  modalRoot.innerHTML = '';
-  modalRoot.appendChild(backdrop);
-
-  const sourceSelect = modal.querySelector('[data-wheel-source]');
-  const spinButton = modal.querySelector('[data-wheel-spin]');
-  const spinnerEl = modal.querySelector('[data-wheel-spinner]');
-  const resultEl = modal.querySelector('[data-wheel-result]');
-  const closeBtn = modal.querySelector('[data-wheel-close]');
-
-  wheelSourceSelect = sourceSelect || null;
-  wheelSpinnerEl = spinnerEl || null;
-  wheelResultEl = resultEl || null;
-  if (wheelSpinnerEl) {
-    wheelSpinnerEl.classList.add('hidden');
-    wheelSpinnerEl.classList.remove('spinning');
-    wheelSpinnerEl.innerHTML = '';
-  }
-  if (wheelResultEl) {
-    wheelResultEl.innerHTML = '';
-  }
-
-  const spinHandler = () => {
-    if (!wheelSourceSelect) return;
-    spinWheel(wheelSourceSelect.value);
-  };
-  if (spinButton) {
-    spinButton.addEventListener('click', spinHandler);
-  }
-
-  const closeHandler = () => closeWheelModal();
-  if (closeBtn) {
-    closeBtn.addEventListener('click', closeHandler);
-  }
-
-  const backdropHandler = (event) => {
-    if (event.target === backdrop) {
-      closeWheelModal();
-    }
-  };
-  backdrop.addEventListener('click', backdropHandler);
-
-  const keyHandler = (event) => {
-    if (event.key === 'Escape') {
-      closeWheelModal();
-    }
-  };
-  document.addEventListener('keydown', keyHandler);
-
-  wheelModalState = {
-    backdrop,
-    modal,
-    spinButton,
-    spinHandler,
-    closeBtn,
-    closeHandler,
-    backdropHandler,
-    keyHandler,
-  };
-}
-
-function closeWheelModal() {
-  if (wheelModalState) {
-    if (wheelModalState.spinButton && wheelModalState.spinHandler) {
-      wheelModalState.spinButton.removeEventListener('click', wheelModalState.spinHandler);
-    }
-    if (wheelModalState.closeBtn && wheelModalState.closeHandler) {
-      wheelModalState.closeBtn.removeEventListener('click', wheelModalState.closeHandler);
-    }
-    if (wheelModalState.backdrop && wheelModalState.backdropHandler) {
-      wheelModalState.backdrop.removeEventListener('click', wheelModalState.backdropHandler);
-    }
-    if (wheelModalState.keyHandler) {
-      document.removeEventListener('keydown', wheelModalState.keyHandler);
-    }
-    if (wheelModalState.backdrop && wheelModalState.backdrop.parentNode) {
-      wheelModalState.backdrop.parentNode.removeChild(wheelModalState.backdrop);
-    }
-  }
-  clearWheelAnimation();
-  wheelModalState = null;
-  wheelSourceSelect = null;
-  wheelSpinnerEl = null;
-  wheelResultEl = null;
 }
 
 // Prompt user to add missing collection parts
@@ -958,6 +877,10 @@ function promptAddMissingCollectionParts(listType, collInfo, currentItem, keywor
     modalRoot.appendChild(backdrop);
   });
 }
+
+// ============================================================================
+// Feature 7: Anime Franchise Automations
+// ============================================================================
 
 function formatAnimeFranchiseEntryLabel(entry) {
   if (!entry) return 'Untitled entry';
@@ -1378,6 +1301,10 @@ function updateBackToTopVisibility() {
   backToTopBtn.classList.toggle('hidden', !shouldShow);
 }
 
+// ============================================================================
+// Feature 3: List Loading & Collapsible Cards
+// ============================================================================
+
 // Detach all DB listeners
 function detachAllListeners() {
   for (const k in listeners) {
@@ -1510,6 +1437,10 @@ function renderList(listType, data) {
 
   renderUnifiedLibrary();
 }
+
+// ============================================================================
+// Feature 4: Unified Library & Virtualized Grid
+// ============================================================================
 
 function renderUnifiedLibrary() {
   if (!combinedListEl) return;
@@ -3649,6 +3580,10 @@ function getMissingMetadataFields(item, listType) {
   return criticalFields.filter(field => !hasMeaningfulValue(item[field]));
 }
 
+// ============================================================================
+// Feature 5: Metadata Refresh & External API Pipelines
+// ============================================================================
+
 function needsMetadataRefresh(listType, item) {
   if (!item || !item.title) return false;
   if (!['movies', 'tvShows', 'anime'].includes(listType)) return false;
@@ -3743,6 +3678,10 @@ function maybeRefreshMetadata(listType, data) {
     refreshTmdbMetadataForItem(listType, id, item, missingFields);
   });
 }
+
+// ============================================================================
+// Feature 8: Utility Helpers & Shared Formatters
+// ============================================================================
 
 function buildTrailerUrl(title, year) {
   if (!title) return '';
@@ -5004,6 +4943,111 @@ async function refreshItemMetadata(listType, itemId, item, options = {}) {
   } finally {
     setButtonState(false);
   }
+}
+
+// ============================================================================
+// Feature 6: Spinner / Wheel Experience
+// ============================================================================
+
+function setupWheelModal() {
+  if (!wheelModalTrigger || !wheelModalTemplate || !modalRoot) return;
+  wheelModalTrigger.addEventListener('click', () => openWheelModal());
+}
+
+function openWheelModal() {
+  if (!wheelModalTemplate || !modalRoot) return;
+  closeAddModal();
+  closeWheelModal();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop wheel-modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'modal wheel-modal';
+  const fragment = wheelModalTemplate.content.cloneNode(true);
+  modal.appendChild(fragment);
+  backdrop.appendChild(modal);
+  modalRoot.innerHTML = '';
+  modalRoot.appendChild(backdrop);
+
+  const sourceSelect = modal.querySelector('[data-wheel-source]');
+  const spinButton = modal.querySelector('[data-wheel-spin]');
+  const spinnerEl = modal.querySelector('[data-wheel-spinner]');
+  const resultEl = modal.querySelector('[data-wheel-result]');
+  const closeBtn = modal.querySelector('[data-wheel-close]');
+
+  wheelSourceSelect = sourceSelect || null;
+  wheelSpinnerEl = spinnerEl || null;
+  wheelResultEl = resultEl || null;
+  if (wheelSpinnerEl) {
+    wheelSpinnerEl.classList.add('hidden');
+    wheelSpinnerEl.classList.remove('spinning');
+    wheelSpinnerEl.innerHTML = '';
+  }
+  if (wheelResultEl) {
+    wheelResultEl.innerHTML = '';
+  }
+
+  const spinHandler = () => {
+    if (!wheelSourceSelect) return;
+    spinWheel(wheelSourceSelect.value);
+  };
+  if (spinButton) {
+    spinButton.addEventListener('click', spinHandler);
+  }
+
+  const closeHandler = () => closeWheelModal();
+  if (closeBtn) {
+    closeBtn.addEventListener('click', closeHandler);
+  }
+
+  const backdropHandler = (event) => {
+    if (event.target === backdrop) {
+      closeWheelModal();
+    }
+  };
+  backdrop.addEventListener('click', backdropHandler);
+
+  const keyHandler = (event) => {
+    if (event.key === 'Escape') {
+      closeWheelModal();
+    }
+  };
+  document.addEventListener('keydown', keyHandler);
+
+  wheelModalState = {
+    backdrop,
+    modal,
+    spinButton,
+    spinHandler,
+    closeBtn,
+    closeHandler,
+    backdropHandler,
+    keyHandler,
+  };
+}
+
+function closeWheelModal() {
+  if (wheelModalState) {
+    if (wheelModalState.spinButton && wheelModalState.spinHandler) {
+      wheelModalState.spinButton.removeEventListener('click', wheelModalState.spinHandler);
+    }
+    if (wheelModalState.closeBtn && wheelModalState.closeHandler) {
+      wheelModalState.closeBtn.removeEventListener('click', wheelModalState.closeHandler);
+    }
+    if (wheelModalState.backdrop && wheelModalState.backdropHandler) {
+      wheelModalState.backdrop.removeEventListener('click', wheelModalState.backdropHandler);
+    }
+    if (wheelModalState.keyHandler) {
+      document.removeEventListener('keydown', wheelModalState.keyHandler);
+    }
+    if (wheelModalState.backdrop && wheelModalState.backdrop.parentNode) {
+      wheelModalState.backdrop.parentNode.removeChild(wheelModalState.backdrop);
+    }
+  }
+  clearWheelAnimation();
+  wheelModalState = null;
+  wheelSourceSelect = null;
+  wheelSpinnerEl = null;
+  wheelResultEl = null;
 }
 
 function buildSpinnerDataScope(listType, rawData) {
