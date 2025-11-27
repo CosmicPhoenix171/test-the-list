@@ -3247,7 +3247,9 @@ function parseSeriesOrder(value) {
 
 function buildSpinnerCandidates(listType, rawData) {
   const entries = Object.entries(rawData || {});
-  if (!entries.length) return [];
+  if (!entries.length) {
+    return { displayCandidates: [], candidateMap: new Map() };
+  }
 
   const mapped = entries
     .map(([id, item]) => {
@@ -3257,54 +3259,66 @@ function buildSpinnerCandidates(listType, rawData) {
     .filter(Boolean);
 
   const eligibleItems = mapped.filter((item) => isSpinnerStatusEligible(item));
-  if (!eligibleItems.length) return [];
-
-  const shouldApplySeriesLogic = ['movies', 'tvShows', 'anime'].includes(listType);
-  if (!shouldApplySeriesLogic) {
-    return eligibleItems.filter(item => !isItemWatched(item));
+  if (!eligibleItems.length) {
+    return { displayCandidates: [], candidateMap: new Map() };
   }
 
-  const standalone = [];
-  const seriesMap = new Map();
+  const shouldApplySeriesLogic = ['movies', 'tvShows', 'anime'].includes(listType);
+  let standalone = [];
 
-  eligibleItems.forEach(item => {
-    const seriesNameRaw = typeof item.seriesName === 'string' ? item.seriesName.trim() : '';
-    if (seriesNameRaw) {
-      const key = seriesNameRaw.toLowerCase();
-      if (!seriesMap.has(key)) {
-        seriesMap.set(key, []);
-      }
-      seriesMap.get(key).push({ order: parseSeriesOrder(item.seriesOrder), item });
-    } else {
-      if (!isItemWatched(item)) {
+  if (!shouldApplySeriesLogic) {
+    standalone = eligibleItems.filter(item => !isItemWatched(item));
+  } else {
+    const seriesMap = new Map();
+    eligibleItems.forEach(item => {
+      const seriesNameRaw = typeof item.seriesName === 'string' ? item.seriesName.trim() : '';
+      if (seriesNameRaw) {
+        const key = seriesNameRaw.toLowerCase();
+        if (!seriesMap.has(key)) {
+          seriesMap.set(key, []);
+        }
+        seriesMap.get(key).push({ order: parseSeriesOrder(item.seriesOrder), item });
+      } else if (!isItemWatched(item)) {
         standalone.push(item);
       }
-    }
-  });
-
-  seriesMap.forEach(entries => {
-    if (!entries || !entries.length) return;
-    entries.sort((a, b) => {
-      if (a.order !== b.order) return a.order - b.order;
-      const titleA = (a.item && a.item.title ? a.item.title : '').toLowerCase();
-      const titleB = (b.item && b.item.title ? b.item.title : '').toLowerCase();
-      if (titleA < titleB) return -1;
-      if (titleA > titleB) return 1;
-      return 0;
     });
-    const firstUnwatched = entries.find(entry => entry && entry.item && !isItemWatched(entry.item));
-    if (firstUnwatched && firstUnwatched.item) {
-      standalone.push(firstUnwatched.item);
-    }
-  });
 
-  return standalone.sort((a, b) => {
+    seriesMap.forEach(entriesForSeries => {
+      if (!entriesForSeries || !entriesForSeries.length) return;
+      entriesForSeries.sort((a, b) => {
+        if (a.order !== b.order) return a.order - b.order;
+        const titleA = (a.item && a.item.title ? a.item.title : '').toLowerCase();
+        const titleB = (b.item && b.item.title ? b.item.title : '').toLowerCase();
+        if (titleA < titleB) return -1;
+        if (titleA > titleB) return 1;
+        return 0;
+      });
+      const firstUnwatched = entriesForSeries.find(entry => entry && entry.item && !isItemWatched(entry.item));
+      if (firstUnwatched && firstUnwatched.item) {
+        standalone.push(firstUnwatched.item);
+      }
+    });
+  }
+
+  standalone.sort((a, b) => {
     const titleA = (a && a.title ? a.title : '').toLowerCase();
     const titleB = (b && b.title ? b.title : '').toLowerCase();
     if (titleA < titleB) return -1;
     if (titleA > titleB) return 1;
     return 0;
   });
+
+  const candidateMap = new Map();
+  const displayCandidates = standalone
+    .map(item => {
+      const id = item.__id || item.id || '';
+      if (!id) return null;
+      candidateMap.set(id, item);
+      return { id, title: item.title || '(no title)' };
+    })
+    .filter(Boolean);
+
+  return { displayCandidates, candidateMap };
 }
 
 function getMissingMetadataFields(item, listType) {
@@ -4732,6 +4746,42 @@ function renderWheelResult(item, listType) {
   wheelResultEl.appendChild(cardNode);
 }
 
+function renderWheelWinnerFromLookup(listType, finalEntry, candidateMap, rawData) {
+  if (!wheelResultEl) return;
+  if (!finalEntry || !finalEntry.id) {
+    wheelResultEl.textContent = 'Winner selected, but no details were found.';
+    return;
+  }
+  let winner = candidateMap?.get(finalEntry.id) || null;
+  if (!winner && rawData && rawData[finalEntry.id]) {
+    const fromRaw = rawData[finalEntry.id];
+    if (fromRaw) {
+      winner = fromRaw.__id ? fromRaw : Object.assign({ __id: finalEntry.id }, fromRaw);
+    }
+  }
+  if (!winner && listCaches[listType] && listCaches[listType][finalEntry.id]) {
+    const fromCache = listCaches[listType][finalEntry.id];
+    if (fromCache) {
+      winner = fromCache.__id ? fromCache : Object.assign({ __id: finalEntry.id }, fromCache);
+    }
+  }
+  if (!winner) {
+    wheelResultEl.innerHTML = '';
+    const heading = document.createElement('div');
+    heading.className = 'wheel-result-heading';
+    heading.textContent = finalEntry.title
+      ? `Winner: ${finalEntry.title}`
+      : 'Winner selected';
+    wheelResultEl.appendChild(heading);
+    const note = document.createElement('div');
+    note.className = 'small';
+    note.textContent = 'Unable to load winner details. Please refresh and try again.';
+    wheelResultEl.appendChild(note);
+    return;
+  }
+  renderWheelResult(winner, listType);
+}
+
 // --- Sequel / Prequel Lookup Logic (TMDb only) ---
 
 function buildRelatedModal(currentItem, related) {
@@ -4908,12 +4958,12 @@ function resolveSeriesRedirect(listType, item, rawData) {
   return needsRedirect ? earliestUnwatched : item;
 }
 
-function animateWheelSequence(candidates, chosenIndex, listType, finalItemOverride) {
+function animateWheelSequence(candidates, chosenIndex, listType, finalDisplayEntry, finalizeCallback) {
   const len = candidates.length;
   if (len === 0 || !wheelSpinnerEl) return;
 
-  const chosenItem = candidates[chosenIndex];
-  const finalDisplayItem = finalItemOverride || chosenItem;
+  const chosenEntry = candidates[chosenIndex];
+  const finalEntry = finalDisplayEntry || chosenEntry;
   const iterations = Math.max(28, len * 5);
   let pointer = Math.floor(Math.random() * len);
   const sequence = [];
@@ -4921,7 +4971,7 @@ function animateWheelSequence(candidates, chosenIndex, listType, finalItemOverri
     sequence.push(candidates[pointer % len]);
     pointer++;
   }
-  sequence.push(finalDisplayItem);
+  sequence.push(finalEntry);
 
   const totalDuration = 7000; // keep spin length consistent regardless of candidate count
   const stepCount = sequence.length;
@@ -4941,8 +4991,8 @@ function animateWheelSequence(candidates, chosenIndex, listType, finalItemOverri
     console.log('[Wheel] animate start', {
       listType,
       chosenIndex,
-      chosenTitle: chosenItem?.title,
-      finalTitle: finalDisplayItem?.title,
+      chosenTitle: chosenEntry?.title,
+      finalTitle: finalEntry?.title,
       candidates: candidates.map(c => c && c.title).filter(Boolean),
       steps: stepCount
     });
@@ -4960,7 +5010,9 @@ function animateWheelSequence(candidates, chosenIndex, listType, finalItemOverri
       try { console.log(`[Wheel] step ${idx + 1}/${sequence.length}: ${item.title || '(no title)'}${isFinal ? ' [FINAL]' : ''}`); } catch (_) {}
       if (isFinal) {
         wheelSpinnerEl.classList.remove('spinning');
-        renderWheelResult(item, listType);
+        if (typeof finalizeCallback === 'function') {
+          finalizeCallback(finalEntry);
+        }
         spinTimeouts = [];
       }
     }, schedule[idx]);
@@ -4993,7 +5045,7 @@ function spinWheel(listType) {
       return;
     }
     const scopedData = buildSpinnerDataScope(listType, data);
-    const candidates = buildSpinnerCandidates(listType, scopedData);
+    const { displayCandidates: candidates, candidateMap } = buildSpinnerCandidates(listType, scopedData);
     try {
       console.log('[Wheel] spin start', {
         listType,
@@ -5013,10 +5065,24 @@ function spinWheel(listType) {
       return;
     }
     const chosenIndex = Math.floor(Math.random() * candidates.length);
-    const chosenCandidate = candidates[chosenIndex];
-    const resolvedCandidate = resolveSeriesRedirect(listType, chosenCandidate, data) || chosenCandidate;
-    try { console.log('[Wheel] pick', { chosenIndex, chosen: chosenCandidate?.title, resolved: resolvedCandidate?.title }); } catch (_) {}
-    animateWheelSequence(candidates, chosenIndex, listType, resolvedCandidate);
+    const chosenEntry = candidates[chosenIndex];
+    const chosenItem = chosenEntry && candidateMap.get(chosenEntry.id);
+    const resolvedItem = chosenItem ? (resolveSeriesRedirect(listType, chosenItem, data) || chosenItem) : null;
+    const resolvedEntry = resolvedItem
+      ? { id: resolvedItem.__id || resolvedItem.id, title: resolvedItem.title || chosenEntry?.title || '(no title)' }
+      : chosenEntry;
+    try {
+      console.log('[Wheel] pick', {
+        chosenIndex,
+        chosen: chosenEntry?.title,
+        resolved: resolvedEntry?.title,
+        resolvedId: resolvedEntry?.id,
+      });
+    } catch (_) {}
+    const finalize = (finalEntry) => {
+      renderWheelWinnerFromLookup(listType, finalEntry, candidateMap, data);
+    };
+    animateWheelSequence(candidates, chosenIndex, listType, resolvedEntry, finalize);
   }).catch(err => {
     console.error('Wheel load failed', err);
     if (!wheelSpinnerEl || !wheelResultEl) {
