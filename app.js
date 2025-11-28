@@ -3285,6 +3285,16 @@ function formatAnimeEpisodesLabel(value) {
   return '';
 }
 
+function formatAnimeRuntimeLabel(item) {
+  if (!item) return '';
+  const duration = parseEpisodeValue(item.animeDuration);
+  if (!duration) return '';
+  if (isAnimeMovieEntry(item)) {
+    return `${duration} min`;
+  }
+  return `${duration} min/ep`;
+}
+
 function buildSeriesCarouselBlock(listType, cardId) {
   const entries = getSeriesGroupEntries(listType, cardId);
   if (!entries || entries.length <= 1) return null;
@@ -3393,7 +3403,10 @@ function buildMovieMetaText(item) {
   if (item.year) metaParts.push(item.year);
   if (item.director) metaParts.push(item.director);
   if (item.runtime) metaParts.push(item.runtime);
-  else if (item.animeDuration) metaParts.push(`${item.animeDuration} min/ep`);
+  else if (item.animeDuration) {
+    const animeRuntime = formatAnimeRuntimeLabel(item);
+    if (animeRuntime) metaParts.push(animeRuntime);
+  }
   if (item.imdbRating) metaParts.push(`IMDb ${item.imdbRating}`);
   return metaParts.join(' • ');
 }
