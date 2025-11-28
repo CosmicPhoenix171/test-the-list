@@ -2225,6 +2225,9 @@ function buildFranchiseTimeline(record) {
   const wrapper = createEl('div', 'franchise-timeline');
   if (!Array.isArray(record.entries) || !record.entries.length) {
     wrapper.appendChild(createEl('div', 'franchise-empty small', { text: 'No timeline entries yet.' }));
+    if (context.isExpanded) {
+      wrapper.classList.add('artwork-wrapper-expanded');
+    }
     return wrapper;
   }
   const track = createEl('div', 'franchise-track');
@@ -2906,10 +2909,16 @@ function buildMovieArtwork(item, context = {}) {
   const wrapper = createEl('div', 'artwork-wrapper');
   const seriesEntries = Array.isArray(context.seriesEntries) ? context.seriesEntries : [];
   const stackItems = buildSeriesPosterStackItems(item, seriesEntries);
-  const shouldStack = !context.isExpanded && stackItems.length > 1;
+  const shouldStack = stackItems.length > 1;
   if (shouldStack) {
     wrapper.classList.add('artwork-stack-wrapper');
-    const stack = createEl('div', 'artwork-stack artwork-deck');
+    const stackClasses = ['artwork-stack'];
+    if (!context.isExpanded) {
+      stackClasses.push('artwork-deck', 'artwork-deck-collapsed');
+    } else {
+      stackClasses.push('artwork-deck', 'artwork-deck-expanded');
+    }
+    const stack = createEl('div', stackClasses.join(' '));
     stackItems.slice(0, 3).forEach((entry, index) => {
       const art = buildPosterNode(entry.poster, entry.title, index === 0);
       art.classList.add('artwork-stack-item');
@@ -3864,7 +3873,9 @@ function buildSeriesTreeBlock(listType, cardId, providedEntries = null) {
   });
 
   if (!list.children.length) return null;
-  block.appendChild(list);
+  const listWrapper = createEl('div', 'series-tree-scroll');
+  listWrapper.appendChild(list);
+  block.appendChild(listWrapper);
   return block;
 }
 
