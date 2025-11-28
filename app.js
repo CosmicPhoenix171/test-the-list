@@ -2854,6 +2854,7 @@ const SEASON_STATUS_OPTIONS = [
 
 const DEFAULT_EPISODE_TRACKING_LIMIT = 100;
 const MAX_EPISODE_TRACKING_LIMIT = 200;
+const DEFAULT_SEASON_STATUS = 'soon';
 
 function createSeasonStatusControls({
   listType,
@@ -2877,11 +2878,15 @@ function createSeasonStatusControls({
     option.textContent = opt.label;
     statusSelect.appendChild(option);
   });
-  const normalizedStatus = normalizeSeasonStatus(season.watchStatus);
+  const existingStatus = normalizeSeasonStatus(season.watchStatus);
+  const normalizedStatus = existingStatus || DEFAULT_SEASON_STATUS;
   statusSelect.value = normalizedStatus;
   const canPersist = Boolean(listType && entryId && fieldName && Array.isArray(sourceSeasons) && sourceSeasons.length);
   if (!canPersist) {
     statusSelect.disabled = true;
+  }
+  if (!existingStatus && canPersist && DEFAULT_SEASON_STATUS) {
+    persistSeasonFields(listType, entryId, fieldName, sourceSeasons, season, { watchStatus: DEFAULT_SEASON_STATUS });
   }
 
   const episodeCount = resolveSeasonEpisodeCount(season);
@@ -2898,14 +2903,15 @@ function createSeasonStatusControls({
 
   const persistStatus = (nextStatus) => {
     if (!canPersist) return;
-    const updates = { watchStatus: nextStatus };
-    if (nextStatus !== 'watching') {
+    const resolvedStatus = normalizeSeasonStatus(nextStatus) || DEFAULT_SEASON_STATUS;
+    const updates = { watchStatus: resolvedStatus };
+    if (resolvedStatus !== 'watching') {
       updates.progressEpisode = '';
     }
     persistSeasonFields(listType, entryId, fieldName, sourceSeasons, season, updates);
     if (episodeSelect) {
-      toggleEpisodeVisibility(episodeSelect, nextStatus === 'watching');
-      if (nextStatus !== 'watching') {
+      toggleEpisodeVisibility(episodeSelect, resolvedStatus === 'watching');
+      if (resolvedStatus !== 'watching') {
         episodeSelect.value = '';
       }
     }
