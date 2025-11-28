@@ -2214,7 +2214,7 @@ function renderFranchiseShelf() {
   }
   const records = franchiseState.records || [];
   if (!records.length) {
-    franchiseShelfEl.innerHTML = '<div class="franchise-empty small">No franchises yet. Build one from your automations to see it here.</div>';
+    franchiseShelfEl.innerHTML = '';
     return;
   }
   const fragment = document.createDocumentFragment();
