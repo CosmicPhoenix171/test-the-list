@@ -6642,21 +6642,28 @@ function pickAnimeTitle(source = {}) {
     seen.add(trimmed);
     candidates.push(trimmed);
   };
-  if (typeof source.title === 'string') pushCandidate(source.title);
-  if (source.titleEnglish) pushCandidate(source.titleEnglish);
-  if (source.title_english) pushCandidate(source.title_english);
-  if (source.title_japanese) pushCandidate(source.title_japanese);
-  if (typeof source.name === 'string') pushCandidate(source.name);
+  const englishFirst = [
+    source.titleEnglish,
+    source.title_english,
+    source.english,
+    typeof source.title === 'object' ? source.title?.english : undefined,
+  ];
+  englishFirst.forEach(pushCandidate);
   if (Array.isArray(source.titles)) {
+    const englishEntry = source.titles.find(entry => entry && /english/i.test(entry.type || ''));
+    if (englishEntry && englishEntry.title) {
+      pushCandidate(englishEntry.title);
+    }
     source.titles.forEach(entry => {
       if (entry && entry.title) pushCandidate(entry.title);
     });
   }
-  if (source.english) pushCandidate(source.english);
+  if (typeof source.title === 'string') pushCandidate(source.title);
+  if (source.title_japanese) pushCandidate(source.title_japanese);
+  if (typeof source.name === 'string') pushCandidate(source.name);
   if (source.romaji) pushCandidate(source.romaji);
   if (source.native) pushCandidate(source.native);
   if (typeof source === 'object' && source.title && typeof source.title === 'object') {
-    pushCandidate(source.title.english);
     pushCandidate(source.title.romaji);
     pushCandidate(source.title.native);
   }
