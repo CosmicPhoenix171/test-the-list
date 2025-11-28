@@ -108,7 +108,6 @@ const suggestionForms = new Set();
 let globalSuggestionClickBound = false;
 let activeSeasonEditor = null;
 const seriesGroups = {};
-const seriesCarouselState = { movies: new Map(), tvShows: new Map(), anime: new Map() };
 const COLLAPSIBLE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const INTRO_SESSION_KEY = '__THE_LIST_INTRO_SEEN__';
@@ -2775,14 +2774,6 @@ function renderCollapsibleMediaGrid(listType, container, entries) {
     }
   });
 
-  const carouselStore = ensureSeriesCarouselStore(listType);
-  const leaderIds = new Set(leaderMembersByCardId.keys());
-  carouselStore.forEach((_, key) => {
-    if (!leaderIds.has(key)) {
-      carouselStore.delete(key);
-    }
-  });
-
   updateCollapsibleCardStates(listType);
 }
 
@@ -2820,11 +2811,11 @@ function renderMovieCardContent(card, listType, cardId, item, entryId = cardId) 
   if (!card) return;
   card.dataset.entryId = entryId;
   card.querySelectorAll('.movie-card-summary, .movie-card-details').forEach(el => el.remove());
-  const summary = buildMovieCardSummary(listType, item, { cardId, entryId });
-  const details = buildMovieCardDetails(listType, cardId, entryId, item);
+  const seriesEntries = isCollapsibleList(listType) ? getSeriesGroupEntries(listType, cardId) : null;
+  const summary = buildMovieCardSummary(listType, item, { cardId, entryId, seriesEntries });
+  const details = buildMovieCardDetails(listType, cardId, entryId, item, { seriesEntries });
   card.insertBefore(summary, card.firstChild || null);
   card.appendChild(details);
-  repositionSeriesCarouselNav(card, listType, cardId);
   restoreActiveSeasonEditor(card);
   queueCardTitleAutosize(card);
 }
@@ -2905,26 +2896,73 @@ if (typeof window !== 'undefined') {
 
 function buildMovieCardSummary(listType, item, context = {}) {
   const summary = createEl('div', 'movie-card-summary');
-  summary.appendChild(buildMovieArtwork(item));
+  summary.appendChild(buildMovieArtwork(item, context));
   summary.appendChild(buildMovieCardInfo(listType, item, context));
   return summary;
 }
 
-function buildMovieArtwork(item) {
+function buildMovieArtwork(item, context = {}) {
   const wrapper = createEl('div', 'artwork-wrapper');
-  if (item.poster) {
-    const poster = createEl('div', 'artwork');
-    const img = createEl('img');
-    img.src = item.poster;
-    img.alt = `${item.title || 'Poster'} artwork`;
-    img.loading = 'lazy';
-    poster.appendChild(img);
-    wrapper.appendChild(poster);
-  } else {
-    const placeholder = createEl('div', 'artwork placeholder', { text: 'No Poster' });
-    wrapper.appendChild(placeholder);
+  const seriesEntries = Array.isArray(context.seriesEntries) ? context.seriesEntries : [];
+  const stackItems = buildSeriesPosterStackItems(item, seriesEntries);
+  if (stackItems.length > 1) {
+    wrapper.classList.add('artwork-stack-wrapper');
+    const stack = createEl('div', 'artwork-stack');
+    stackItems.slice(0, 3).forEach((entry, index) => {
+      const art = buildPosterNode(entry.poster, entry.title, index === 0);
+      art.classList.add('artwork-stack-item');
+      stack.appendChild(art);
+    });
+    if (stackItems.length > 3) {
+      const spill = createEl('div', 'artwork-stack-count', { text: `+${stackItems.length - 3}` });
+      stack.appendChild(spill);
+    }
+    wrapper.appendChild(stack);
+    return wrapper;
   }
+
+  const posterNode = buildPosterNode(item?.poster, item?.title || 'Poster');
+  if (posterNode) {
+    wrapper.appendChild(posterNode);
+    return wrapper;
+  }
+  wrapper.appendChild(createEl('div', 'artwork placeholder', { text: 'No Poster' }));
   return wrapper;
+}
+
+function buildPosterNode(posterUrl, title = '', isPrimary = false) {
+  const node = createEl('div', posterUrl ? 'artwork' : 'artwork placeholder');
+  if (posterUrl) {
+    const img = createEl('img');
+    img.src = posterUrl;
+    img.alt = `${title || 'Poster'} artwork`;
+    img.loading = 'lazy';
+    node.appendChild(img);
+  } else {
+    node.textContent = 'No Poster';
+  }
+  if (isPrimary) {
+    node.classList.add('artwork-primary');
+  }
+  return node;
+}
+
+function buildSeriesPosterStackItems(activeItem, seriesEntries = []) {
+  const items = [];
+  const seen = new Set();
+  function addItem(source) {
+    if (!source) return;
+    const poster = source.poster || '';
+    const key = poster || `title:${source.title || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ poster: poster || '', title: source.title || '' });
+  }
+  if (activeItem) {
+    addItem(activeItem);
+  }
+  seriesEntries.forEach(entry => addItem(entry?.item));
+  return items.filter(entry => entry.poster);
 }
 
 function buildMovieCardInfo(listType, item, context = {}) {
@@ -3179,7 +3217,7 @@ function deriveSeriesBadgeMetrics(listType, cardId, fallbackItem) {
   };
 }
 
-function buildMovieCardDetails(listType, cardId, entryId, item) {
+function buildMovieCardDetails(listType, cardId, entryId, item, context = {}) {
   const details = createEl('div', 'collapsible-details movie-card-details');
   const infoStack = createEl('div', 'movie-card-detail-stack');
   const metaText = buildMovieMetaText(item);
@@ -3234,7 +3272,7 @@ function buildMovieCardDetails(listType, cardId, entryId, item) {
   }
 
   if (isCollapsibleList(listType)) {
-    const seriesBlock = buildSeriesCarouselBlock(listType, cardId);
+    const seriesBlock = buildSeriesTreeBlock(listType, cardId, context.seriesEntries);
     if (seriesBlock) {
       details.appendChild(seriesBlock);
     }
@@ -3802,36 +3840,35 @@ function formatAnimeRuntimeLabel(item) {
   return `${duration} min/ep`;
 }
 
-function buildSeriesCarouselBlock(listType, cardId) {
-  const entries = getSeriesGroupEntries(listType, cardId);
+function buildSeriesTreeBlock(listType, cardId, providedEntries = null) {
+  const entries = Array.isArray(providedEntries) && providedEntries.length
+    ? providedEntries
+    : getSeriesGroupEntries(listType, cardId);
   if (!entries || entries.length <= 1) return null;
-  const state = getSeriesCarouselState(listType, cardId, entries.length);
-  const block = createEl('div', 'series-carousel detail-block');
+
+  const block = createEl('div', 'series-tree detail-block');
   block.dataset.cardId = cardId;
   block.dataset.listType = listType;
+  block.appendChild(buildSeriesTreeHeader(entries.length));
 
-  const nav = createEl('div', 'series-carousel-nav');
-  const prevBtn = createEl('button', 'series-carousel-btn', { text: '‹ Prev' });
-  prevBtn.type = 'button';
-  prevBtn.setAttribute('aria-label', 'Previous series entry');
-  const counterEl = createEl('div', 'series-carousel-counter', { text: `${state.index + 1} / ${entries.length}` });
-  const nextBtn = createEl('button', 'series-carousel-btn', { text: 'Next ›' });
-  nextBtn.type = 'button';
-  nextBtn.setAttribute('aria-label', 'Next series entry');
-  nav.appendChild(prevBtn);
-  nav.appendChild(counterEl);
-  nav.appendChild(nextBtn);
-  block.appendChild(nav);
+  const list = createEl('div', 'series-tree-list');
+  entries.forEach((entry, index) => {
+    const node = buildSeriesTreeNode(listType, entry, index);
+    if (node) {
+      list.appendChild(node);
+    }
+  });
 
-  prevBtn.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    cycleSeriesCard(listType, cardId, -1);
-  });
-  nextBtn.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    cycleSeriesCard(listType, cardId, 1);
-  });
+  if (!list.children.length) return null;
+  block.appendChild(list);
   return block;
+}
+
+function buildSeriesTreeHeader(count) {
+  const heading = createEl('div', 'series-tree-heading');
+  heading.appendChild(createEl('div', 'series-tree-heading-title', { text: 'Franchise order' }));
+  heading.appendChild(createEl('div', 'series-tree-heading-count', { text: `${count} ${count === 1 ? 'entry' : 'entries'}` }));
+  return heading;
 }
 
 function getSeriesGroupEntries(listType, cardId) {
@@ -3857,25 +3894,151 @@ function formatSeriesEntryLabel(entry) {
   return parts.join(' ');
 }
 
-function cycleSeriesCard(listType, cardId, delta) {
-  const entries = getSeriesGroupEntries(listType, cardId);
-  if (!entries || entries.length <= 1) return;
-  const state = getSeriesCarouselState(listType, cardId, entries.length);
-  const total = entries.length;
-  state.index = (state.index + delta + total) % total;
-  const entry = entries[state.index];
-  if (!entry) return;
-  state.entryId = entry.id;
-  const cards = document.querySelectorAll(`.card.collapsible.movie-card[data-list-type="${listType}"][data-id="${cardId}"]`);
-  if (!cards.length) return;
-  cards.forEach(card => {
-    renderMovieCardContent(card, listType, cardId, entry.item, entry.id);
-    card.classList.add('expanded');
-    repositionSeriesCarouselNav(card, listType, cardId);
-  });
-  const expandedSet = ensureExpandedSet(listType);
-  expandedSet.add(cardId);
-  updateCollapsibleCardStates(listType);
+function buildSeriesTreeNode(listType, entry, fallbackIndex = 0) {
+  if (!entry || !entry.item) return null;
+  const { item } = entry;
+  const node = createEl('div', 'series-tree-node');
+  node.dataset.entryId = entry.id || '';
+
+  const orderLabel = resolveSeriesNodeOrder(entry, fallbackIndex);
+  node.appendChild(createEl('div', 'series-tree-order', { text: `#${orderLabel}` }));
+
+  const poster = buildSeriesTreePoster(item);
+  if (poster) {
+    node.appendChild(poster);
+  }
+
+  const body = createEl('div', 'series-tree-body');
+  const titleRow = createEl('div', 'series-tree-title-row');
+  titleRow.appendChild(createEl('div', 'series-tree-node-title', { text: item.title || '(no title)' }));
+  const statusBadge = buildSeriesTreeStatusBadge(item);
+  if (statusBadge) {
+    titleRow.appendChild(statusBadge);
+  }
+  body.appendChild(titleRow);
+
+  const meta = buildSeriesTreeMeta(item);
+  if (meta) {
+    body.appendChild(meta);
+  }
+
+  const seriesLine = buildSeriesLine(item, 'series-tree-line');
+  if (seriesLine) {
+    body.appendChild(seriesLine);
+  }
+
+  const plot = buildSeriesTreePlot(item);
+  if (plot) {
+    body.appendChild(plot);
+  }
+
+  if (item.notes) {
+    body.appendChild(createEl('div', 'series-tree-notes', { text: item.notes }));
+  }
+
+  node.appendChild(body);
+  return node;
+}
+
+function resolveSeriesNodeOrder(entry, fallbackIndex = 0) {
+  const numericOrder = numericSeriesOrder(entry?.order ?? entry?.item?.seriesOrder);
+  if (numericOrder !== null && numericOrder !== undefined) {
+    return numericOrder;
+  }
+  return fallbackIndex + 1;
+}
+
+function buildSeriesTreePoster(item) {
+  const wrapper = createEl('div', 'series-tree-poster');
+  if (item.poster) {
+    const img = createEl('img');
+    img.src = item.poster;
+    img.alt = `${item.title || 'Poster'} artwork`;
+    img.loading = 'lazy';
+    wrapper.appendChild(img);
+  } else {
+    wrapper.classList.add('placeholder');
+    wrapper.textContent = 'No Poster';
+  }
+  return wrapper;
+}
+
+function buildSeriesTreeStatusBadge(item) {
+  const status = deriveSeriesTreeStatus(item);
+  if (!status) return null;
+  const badge = createEl('span', 'series-tree-status', { text: status.label });
+  if (status.state) {
+    badge.dataset.state = status.state;
+  }
+  return badge;
+}
+
+function deriveSeriesTreeStatus(item) {
+  if (!item) return null;
+  if (item.finished || item.finishedAt) {
+    return { label: 'Finished', state: 'finished' };
+  }
+  const candidates = [item.watchStatus, item.animeStatus, item.status];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const normalized = String(candidate).trim().toLowerCase();
+    if (!normalized) continue;
+    if (normalized.startsWith('finish') || normalized.startsWith('complete')) {
+      return { label: 'Finished', state: 'finished' };
+    }
+    if (normalized.startsWith('watch')) {
+      return { label: 'Watching', state: 'watching' };
+    }
+    if (normalized.startsWith('soon') || normalized.startsWith('plan')) {
+      return { label: 'Soon™', state: 'soon' };
+    }
+    if (normalized.startsWith('releas') || normalized === 'airing' || normalized === 'ongoing') {
+      return { label: 'Airing', state: 'airing' };
+    }
+    if (normalized.startsWith('hiatus') || normalized.startsWith('pause')) {
+      return { label: 'Hiatus', state: 'paused' };
+    }
+    if (normalized.startsWith('cancel')) {
+      return { label: 'Cancelled', state: 'cancelled' };
+    }
+    if (normalized.startsWith('not') || normalized === 'tba') {
+      return { label: 'Announced', state: 'soon' };
+    }
+    return { label: normalized.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()), state: 'other' };
+  }
+  return null;
+}
+
+function buildSeriesTreeMeta(item) {
+  if (!item) return null;
+  const parts = [];
+  if (item.year) parts.push(item.year);
+  const episodeCount = extractEpisodeCount(item);
+  const isMovie = isAnimeMovieEntry(item) || (item.imdbType && String(item.imdbType).toLowerCase() === 'movie');
+  if (!isMovie && episodeCount > 0) {
+    parts.push(`${episodeCount} ep`);
+  }
+  const runtimeLabel = item.runtime || formatAnimeRuntimeLabel(item);
+  if (runtimeLabel) {
+    parts.push(runtimeLabel);
+  }
+  if (item.director) {
+    parts.push(item.director);
+  }
+  if (!parts.length) return null;
+  return createEl('div', 'series-tree-meta', { text: parts.join(' • ') });
+}
+
+function buildSeriesTreePlot(item) {
+  const text = typeof item.plot === 'string' ? item.plot.trim() : '';
+  if (!text) return null;
+  return createEl('div', 'series-tree-plot', { text: truncateText(text, 240) });
+}
+
+function truncateText(value, limit = 240) {
+  if (!value) return '';
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit - 1).trim()}…`;
 }
 
 function resetSeriesCardToFirstEntry(listType, cardId) {
@@ -3883,26 +4046,8 @@ function resetSeriesCardToFirstEntry(listType, cardId) {
   if (!entries || !entries.length) return;
   const first = entries[0];
   if (!first || !first.item) return;
-  const state = getSeriesCarouselState(listType, cardId, entries.length);
-  state.index = 0;
-  state.entryId = first.id;
   const cards = document.querySelectorAll(`.card.collapsible.movie-card[data-list-type="${listType}"][data-id="${cardId}"]`);
   cards.forEach(card => renderMovieCardContent(card, listType, cardId, first.item, first.id));
-}
-
-function repositionSeriesCarouselNav(card, listType, cardId) {
-  if (!card || !listType || !cardId) return;
-  const summary = card.querySelector('.movie-card-summary');
-  const carouselBlock = card.querySelector('.series-carousel.detail-block');
-  if (!summary || !carouselBlock) return;
-  const badgeRow = summary.querySelector('[data-card-id]');
-  const target = badgeRow || summary.lastElementChild || summary;
-  const parent = target.parentNode;
-  if (!parent) return;
-  const nextSibling = target.nextSibling;
-  if (nextSibling === carouselBlock) return;
-  parent.insertBefore(carouselBlock, nextSibling);
-  carouselBlock.classList.add('series-carousel-inline');
 }
 
 function buildMovieMetaText(item) {
@@ -4203,28 +4348,6 @@ function ensureExpandedSet(listType) {
   return store;
 }
 
-function ensureSeriesCarouselStore(listType) {
-  let store = seriesCarouselState[listType];
-  if (!(store instanceof Map)) {
-    store = new Map();
-    seriesCarouselState[listType] = store;
-  }
-  return store;
-}
-
-function getSeriesCarouselState(listType, cardId, entryCount = 0) {
-  const store = ensureSeriesCarouselStore(listType);
-  let state = store.get(cardId);
-  if (!state) {
-    state = { index: 0 };
-    store.set(cardId, state);
-  }
-  if (entryCount && state.index >= entryCount) {
-    state.index = 0;
-  }
-  return state;
-}
-
 function sortSeriesRecords(records) {
   return records.slice().sort((a, b) => {
     const orderA = numericSeriesOrder(a.order);
@@ -4245,21 +4368,6 @@ function sortSeriesRecords(records) {
 
 function resolveSeriesDisplayEntry(listType, leaderId, entries) {
   if (!entries || !entries.length) return null;
-  const state = getSeriesCarouselState(listType, leaderId, entries.length);
-  let idx = typeof state.index === 'number' ? state.index : 0;
-  if (idx >= entries.length || idx < 0) idx = 0;
-  if (state.entryId) {
-    const matchIdx = entries.findIndex(entry => entry.id === state.entryId);
-    if (matchIdx >= 0) idx = matchIdx;
-  }
-  const entry = entries[idx] || entries[0];
-  if (entry) {
-    state.index = entries.indexOf(entry);
-    state.entryId = entry.id;
-    return entry;
-  }
-  state.index = 0;
-  state.entryId = entries[0].id;
   return entries[0];
 }
 
