@@ -2618,7 +2618,7 @@ function buildSeriesTreeBlock(listType, cardId, providedEntries = null) {
 
 function buildSeriesTreeHeader(count) {
   const heading = createEl('div', 'series-tree-heading');
-  heading.appendChild(createEl('div', 'series-tree-heading-title', { text: 'Franchise order' }));
+  heading.appendChild(createEl('div', 'series-tree-heading-title', { text: 'Series order' }));
   heading.appendChild(createEl('div', 'series-tree-heading-count', { text: `${count} ${count === 1 ? 'entry' : 'entries'}` }));
   return heading;
 }
@@ -4646,7 +4646,7 @@ async function tmdbFetch(path, params = {}) {
   return await resp.json();
 }
 
-function formatTmdbFranchiseEntry(item, mediaType, extras = {}) {
+function formatTmdbEntrySummary(item, mediaType, extras = {}) {
   if (!item) return null;
   const title = mediaType === 'tv'
     ? (item.name || item.original_name || item.title || item.original_title)
@@ -4666,218 +4666,6 @@ function formatTmdbFranchiseEntry(item, mediaType, extras = {}) {
     voteAverage: Number(item.vote_average) || 0,
     ...extras,
   };
-}
-
-function pickBestTmdbSearchResult(results, query, mediaType) {
-  if (!Array.isArray(results) || !results.length) return null;
-  const normalizedQuery = normalizeTitleKey(query);
-  return results.reduce((best, entry) => {
-    if (!entry) return best;
-    const title = mediaType === 'tv'
-      ? (entry.name || entry.original_name || '')
-      : (entry.title || entry.original_title || '');
-    if (!title) return best;
-    const normalizedTitle = normalizeTitleKey(title);
-    const popularity = Number(entry.popularity) || 0;
-    const voteAverage = Number(entry.vote_average) || 0;
-    const exactMatch = normalizedTitle === normalizedQuery;
-    const score = (exactMatch ? 1000 : 0) + popularity * 3 + voteAverage;
-    if (!best || score > best.__score) {
-      best = { ...entry, __score: score };
-    }
-    return best;
-  }, null);
-}
-
-function mergeFranchiseEntrySets(targetMap, entries) {
-  if (!Array.isArray(entries)) return;
-  entries.forEach(entry => {
-    if (!entry || !entry.id) return;
-    const key = `${entry.mediaType || 'unknown'}:${entry.id}`;
-    if (targetMap.has(key)) return;
-    targetMap.set(key, entry);
-  });
-}
-
-function buildFranchiseSeasonEntries(tvDetails) {
-  if (!tvDetails || !Array.isArray(tvDetails.seasons)) return [];
-  return tvDetails.seasons
-    .filter(season => season && season.season_number !== undefined)
-    .map(season => ({
-      id: `${tvDetails.id}-season-${season.season_number}`,
-      tmdbId: season.id || null,
-      mediaType: 'tvSeason',
-      seriesId: tvDetails.id,
-      title: season.name || `Season ${season.season_number}`,
-      seasonNumber: season.season_number,
-      episodes: season.episode_count || null,
-      year: extractPrimaryYear(season.air_date || ''),
-      releaseDate: season.air_date || '',
-      poster: season.poster_path ? `${TMDB_IMAGE_BASE_URL}${season.poster_path}` : '',
-      overview: season.overview || '',
-    }));
-}
-
-function collectRecommendationEntries(details, mediaType) {
-  if (!details) return [];
-  const buckets = [];
-  const pushEntries = (source, relation) => {
-    if (!source || !Array.isArray(source.results)) return;
-    source.results.forEach(item => {
-      const entry = formatTmdbFranchiseEntry(item, mediaType, {
-        relation,
-        relationSourceId: details.id,
-      });
-      if (entry) buckets.push(entry);
-    });
-  };
-  pushEntries(details.recommendations, 'recommendation');
-  pushEntries(details.similar, 'similar');
-  return buckets;
-}
-
-async function searchTmdbAcrossMedia(query) {
-  if (!query || !query.trim()) return { movieMatches: [], tvMatches: [] };
-  const params = {
-    query: query.trim(),
-    include_adult: 'false',
-    language: 'en-US',
-  };
-  const [movieResp, tvResp] = await Promise.allSettled([
-    tmdbFetch('/search/movie', params),
-    tmdbFetch('/search/tv', params),
-  ]);
-  const movieMatches = movieResp.status === 'fulfilled' && Array.isArray(movieResp.value?.results)
-    ? movieResp.value.results
-    : [];
-  const tvMatches = tvResp.status === 'fulfilled' && Array.isArray(tvResp.value?.results)
-    ? tvResp.value.results
-    : [];
-  return { movieMatches, tvMatches };
-}
-
-async function fetchTmdbFranchiseDetails(mediaType, id) {
-  if (!id) return null;
-  const append = 'credits,external_ids,recommendations,similar';
-  try {
-    const payload = await tmdbFetch(`/${mediaType}/${id}`, { append_to_response: append });
-    return payload || null;
-  } catch (err) {
-    console.warn('Unable to fetch TMDb franchise details', mediaType, id, err);
-    return null;
-  }
-}
-
-async function fetchTmdbCollectionMovies(collectionId) {
-  if (!collectionId) return [];
-  try {
-    const payload = await tmdbFetch(`/collection/${collectionId}`);
-    if (!payload || !Array.isArray(payload.parts)) return [];
-    return payload.parts
-      .map((part, index) => formatTmdbFranchiseEntry(part, 'movie', {
-        collectionId: payload.id,
-        collectionName: payload.name || '',
-        collectionOrder: typeof part.order === 'number' ? part.order : index + 1,
-      }))
-      .filter(Boolean);
-  } catch (err) {
-    console.warn('Unable to fetch TMDb collection entries', collectionId, err);
-    return [];
-  }
-}
-
-async function fetchTmdbFranchise(query) {
-  const sanitizedQuery = (query || '').trim();
-  if (!sanitizedQuery) return null;
-  if (!TMDB_API_KEY) {
-    maybeWarnAboutTmdbKey();
-    throw new Error('TMDb API key missing');
-  }
-
-  const franchise = {
-    query: sanitizedQuery,
-    mainMovie: null,
-    mainTV: null,
-    collectionMovies: [],
-    tvSeasons: [],
-    connectedUniverse: [],
-    allEntriesFlat: [],
-  };
-
-  const allEntryMap = new Map();
-
-  try {
-    const { movieMatches, tvMatches } = await searchTmdbAcrossMedia(sanitizedQuery);
-    const bestMovie = pickBestTmdbSearchResult(movieMatches, sanitizedQuery, 'movie');
-    const bestTv = pickBestTmdbSearchResult(tvMatches, sanitizedQuery, 'tv');
-
-    if (bestMovie && bestMovie.id) {
-      const movieDetails = await fetchTmdbFranchiseDetails('movie', bestMovie.id);
-      if (movieDetails) {
-        franchise.mainMovie = formatTmdbFranchiseEntry(movieDetails, 'movie', {
-          runtime: movieDetails.runtime || null,
-          releaseDate: movieDetails.release_date || '',
-          imdbId: movieDetails.imdb_id || '',
-          collectionId: movieDetails.belongs_to_collection?.id || null,
-          collectionName: movieDetails.belongs_to_collection?.name || '',
-        });
-        if (franchise.mainMovie) mergeFranchiseEntrySets(allEntryMap, [franchise.mainMovie]);
-
-        if (movieDetails.belongs_to_collection?.id) {
-          const collectionEntries = await fetchTmdbCollectionMovies(movieDetails.belongs_to_collection.id);
-          franchise.collectionMovies = collectionEntries;
-          mergeFranchiseEntrySets(allEntryMap, collectionEntries);
-        }
-
-        const movieRelated = collectRecommendationEntries(movieDetails, 'movie');
-        franchise.connectedUniverse.push(...movieRelated);
-        mergeFranchiseEntrySets(allEntryMap, movieRelated);
-      }
-    }
-
-    if (bestTv && bestTv.id) {
-      const tvDetails = await fetchTmdbFranchiseDetails('tv', bestTv.id);
-      if (tvDetails) {
-        franchise.mainTV = formatTmdbFranchiseEntry(tvDetails, 'tv', {
-          seasonsCount: Array.isArray(tvDetails.seasons) ? tvDetails.seasons.length : 0,
-          firstAirDate: tvDetails.first_air_date || '',
-          lastAirDate: tvDetails.last_air_date || '',
-          episodeRunTime: Array.isArray(tvDetails.episode_run_time) ? tvDetails.episode_run_time[0] : null,
-        });
-        if (franchise.mainTV) mergeFranchiseEntrySets(allEntryMap, [franchise.mainTV]);
-
-        const seasons = buildFranchiseSeasonEntries(tvDetails);
-        franchise.tvSeasons = seasons;
-        seasons.forEach(season => {
-          const key = `tvSeason:${season.id}`;
-          if (!allEntryMap.has(key)) {
-            allEntryMap.set(key, season);
-          }
-        });
-
-        const tvRelated = collectRecommendationEntries(tvDetails, 'tv');
-        franchise.connectedUniverse.push(...tvRelated);
-        mergeFranchiseEntrySets(allEntryMap, tvRelated);
-      }
-    }
-
-    const uniqueUniverse = new Map();
-    franchise.connectedUniverse.forEach(entry => {
-      if (!entry || !entry.id) return;
-      if (franchise.mainMovie && entry.mediaType === 'movie' && entry.id === franchise.mainMovie.id) return;
-      if (franchise.mainTV && entry.mediaType === 'tv' && entry.id === franchise.mainTV.id) return;
-      if (franchise.collectionMovies.some(movie => movie.id === entry.id && entry.mediaType === 'movie')) return;
-      const key = `${entry.mediaType}:${entry.id}`;
-      if (!uniqueUniverse.has(key)) uniqueUniverse.set(key, entry);
-    });
-    franchise.connectedUniverse = Array.from(uniqueUniverse.values());
-
-    franchise.allEntriesFlat = Array.from(allEntryMap.values());
-    return franchise;
-  } catch (err) {
-    console.warn('Unable to build TMDb franchise payload', err);
-    throw err;
-  }
 }
 
 // --- Watch Providers (TMDb) ---
@@ -6791,7 +6579,7 @@ async function discoverTmdbKeywordEntries(keywordId, mediaType, pageLimit = TMDB
       });
       if (Array.isArray(payload?.results)) {
         payload.results.forEach(result => {
-          const entry = formatTmdbFranchiseEntry(result, mediaType);
+          const entry = formatTmdbEntrySummary(result, mediaType);
           if (entry) entries.push(entry);
         });
       }
