@@ -2777,6 +2777,16 @@ function createSeasonNoteRow({
   const row = createEl('div', 'tv-season-line');
   const summaryText = formatSeasonSummary(season, fallbackLabel);
   row.appendChild(createEl('div', 'tv-season-line-summary', { text: summaryText }));
+  const statusControls = createSeasonStatusControls({
+    listType,
+    entryId,
+    season,
+    fieldName,
+    sourceSeasons,
+  });
+  if (statusControls) {
+    row.appendChild(statusControls);
+  }
   const notesLabel = createEl('label', 'season-notes-field');
   notesLabel.appendChild(createEl('span', 'sr-only', { text: `${summaryText} notes` }));
   const textarea = document.createElement('textarea');
@@ -2810,21 +2820,193 @@ function createSeasonNoteRow({
   return row;
 }
 
+const SEASON_STATUS_OPTIONS = [
+  { value: '', label: 'Status' },
+  { value: 'watching', label: 'Watching' },
+  { value: 'finished', label: 'Finished' },
+  { value: 'soon', label: 'Soon™' },
+];
+
+const DEFAULT_EPISODE_TRACKING_LIMIT = 100;
+const MAX_EPISODE_TRACKING_LIMIT = 200;
+
+function createSeasonStatusControls({
+  listType,
+  entryId,
+  season,
+  fieldName,
+  sourceSeasons = [],
+} = {}) {
+  if (!season) return null;
+  const container = createEl('div', 'season-status-controls');
+  const statusSelect = document.createElement('select');
+  statusSelect.className = 'season-pill-select season-status-pill';
+  SEASON_STATUS_OPTIONS.forEach(opt => {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.textContent = opt.label;
+    statusSelect.appendChild(option);
+  });
+  const normalizedStatus = normalizeSeasonStatus(season.watchStatus);
+  statusSelect.value = normalizedStatus;
+  const canPersist = Boolean(listType && entryId && fieldName && Array.isArray(sourceSeasons) && sourceSeasons.length);
+  if (!canPersist) {
+    statusSelect.disabled = true;
+  }
+
+  const episodeCount = resolveSeasonEpisodeCount(season);
+  const episodeSelect = buildSeasonEpisodeSelect({
+    season,
+    initialStatus: normalizedStatus,
+    episodeCount,
+    listType,
+    entryId,
+    fieldName,
+    sourceSeasons,
+  });
+
+  const persistStatus = (nextStatus) => {
+    if (!canPersist) return;
+    const updates = { watchStatus: nextStatus };
+    if (nextStatus !== 'watching') {
+      updates.progressEpisode = '';
+    }
+    persistSeasonFields(listType, entryId, fieldName, sourceSeasons, season, updates);
+    if (episodeSelect) {
+      toggleEpisodeVisibility(episodeSelect, nextStatus === 'watching');
+      if (nextStatus !== 'watching') {
+        episodeSelect.value = '';
+      }
+    }
+  };
+
+  statusSelect.addEventListener('change', (event) => {
+    event.stopPropagation();
+    persistStatus(statusSelect.value);
+  });
+  ['click', 'keydown', 'keyup'].forEach(evt => {
+    statusSelect.addEventListener(evt, (event) => event.stopPropagation());
+  });
+
+  container.appendChild(statusSelect);
+  if (episodeSelect) {
+    container.appendChild(episodeSelect);
+  }
+  return container;
+}
+
+function buildSeasonEpisodeSelect({
+  season,
+  initialStatus,
+  episodeCount,
+  listType,
+  entryId,
+  fieldName,
+  sourceSeasons = [],
+} = {}) {
+  if (!season) return null;
+  const totalEpisodes = Math.max(episodeCount || DEFAULT_EPISODE_TRACKING_LIMIT, 1);
+  const cappedEpisodes = Math.min(totalEpisodes, MAX_EPISODE_TRACKING_LIMIT);
+  const select = document.createElement('select');
+  select.className = 'season-pill-select season-episode-pill';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = episodeCount > 0 ? `Ep 1-${episodeCount}` : 'Episode…';
+  select.appendChild(placeholder);
+  for (let i = 1; i <= cappedEpisodes; i += 1) {
+    const option = document.createElement('option');
+    option.value = String(i);
+    option.textContent = episodeCount > 0 ? `Ep ${i}/${episodeCount}` : `Episode ${i}`;
+    select.appendChild(option);
+  }
+  const storedEpisode = parseEpisodeValue(season.progressEpisode);
+  if (storedEpisode > 0 && storedEpisode > cappedEpisodes) {
+    const custom = document.createElement('option');
+    custom.value = String(storedEpisode);
+    custom.textContent = `Episode ${storedEpisode}`;
+    select.appendChild(custom);
+  }
+  if (storedEpisode > 0) {
+    select.value = String(storedEpisode);
+  }
+  toggleEpisodeVisibility(select, initialStatus === 'watching');
+
+  const canPersist = Boolean(listType && entryId && fieldName && Array.isArray(sourceSeasons) && sourceSeasons.length);
+  if (!canPersist) {
+    select.disabled = true;
+  }
+
+  select.addEventListener('change', (event) => {
+    event.stopPropagation();
+    if (!canPersist) return;
+    const parsed = parseEpisodeValue(select.value);
+    const normalized = parsed > 0 ? parsed : '';
+    persistSeasonFields(listType, entryId, fieldName, sourceSeasons, season, { progressEpisode: normalized });
+  });
+  ['click', 'keydown', 'keyup'].forEach(evt => {
+    select.addEventListener(evt, (event) => event.stopPropagation());
+  });
+  return select;
+}
+
+function toggleEpisodeVisibility(select, shouldShow) {
+  if (!select) return;
+  if (shouldShow) {
+    select.classList.remove('is-hidden');
+    select.disabled = false;
+  } else {
+    select.classList.add('is-hidden');
+    select.disabled = true;
+  }
+}
+
+function normalizeSeasonStatus(value) {
+  if (!value) return '';
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized.startsWith('watch')) return 'watching';
+  if (normalized.startsWith('finish') || normalized.startsWith('complete')) return 'finished';
+  if (normalized.startsWith('soon')) return 'soon';
+  return '';
+}
+
+function resolveSeasonEpisodeCount(season) {
+  if (!season) return 0;
+  return parseEpisodeValue(season.episodeCount ?? season.totalEpisodes ?? season.episodes ?? season.animeEpisodes);
+}
+
 function persistSeasonNote(listType, entryId, fieldName, sourceSeasons, targetSeason, noteValue) {
   if (!listType || !entryId || !fieldName || !Array.isArray(sourceSeasons) || !targetSeason) return;
   const normalizedValue = typeof noteValue === 'string' ? noteValue : '';
-  let needsUpdate = false;
+  persistSeasonFields(listType, entryId, fieldName, sourceSeasons, targetSeason, { notes: normalizedValue });
+}
+
+function persistSeasonFields(listType, entryId, fieldName, sourceSeasons, targetSeason, updates = {}) {
+  if (!listType || !entryId || !fieldName || !Array.isArray(sourceSeasons) || !targetSeason) return;
+  const entries = Object.entries(updates).filter(([, value]) => value !== undefined);
+  if (!entries.length) return;
+  let mutated = false;
   const next = sourceSeasons.map(season => {
     if (!seasonMatches(season, targetSeason)) return season;
-    const currentNote = typeof season?.notes === 'string' ? season.notes : '';
-    if (currentNote === normalizedValue) return season;
-    needsUpdate = true;
-    return { ...season, notes: normalizedValue };
+    let changed = false;
+    const updated = { ...season };
+    entries.forEach(([key, value]) => {
+      const currentValue = season?.[key];
+      const normalizedCurrent = currentValue ?? '';
+      const normalizedNext = value ?? '';
+      if (normalizedCurrent === normalizedNext) return;
+      updated[key] = value;
+      changed = true;
+    });
+    if (changed) {
+      mutated = true;
+      return updated;
+    }
+    return season;
   });
-  if (!needsUpdate) return;
-  targetSeason.notes = normalizedValue;
+  if (!mutated) return;
+  Object.assign(targetSeason, updates);
   updateItem(listType, entryId, { [fieldName]: next }).catch(err => {
-    console.warn('Failed to save season note', { listType, entryId, fieldName }, err);
+    console.warn('Failed to save season metadata', { listType, entryId, fieldName, updates }, err);
   });
 }
 
