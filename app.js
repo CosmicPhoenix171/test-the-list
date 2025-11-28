@@ -2252,9 +2252,11 @@ function renderCollapsibleMediaGrid(listType, container, entries) {
 
   displayRecords.forEach(record => {
     const { id, displayItem, displayEntryId, index } = record;
-    grid.appendChild(buildCollapsibleMovieCard(listType, id, displayItem, index, {
+    const card = buildCollapsibleMovieCard(listType, id, displayItem, index, {
       displayEntryId,
-    }));
+    });
+    grid.appendChild(card);
+    queueCardTitleAutosize(card);
   });
 
   container.appendChild(grid);
@@ -2280,7 +2282,9 @@ function renderCollapsibleMediaGrid(listType, container, entries) {
 function renderStandardList(container, listType, entries) {
   entries.forEach(([id, item]) => {
     if (!item) return;
-    container.appendChild(buildStandardCard(listType, id, item));
+    const card = buildStandardCard(listType, id, item);
+    container.appendChild(card);
+    queueCardTitleAutosize(card);
   });
 }
 
@@ -2314,6 +2318,67 @@ function renderMovieCardContent(card, listType, cardId, item, entryId = cardId) 
   card.appendChild(details);
   repositionSeriesCarouselNav(card, listType, cardId);
   restoreActiveSeasonEditor(card);
+  queueCardTitleAutosize(card);
+}
+
+const cardTitleResizeQueue = new Set();
+let cardTitleResizeScheduled = false;
+
+function queueCardTitleAutosize(card) {
+  if (!card) return;
+  cardTitleResizeQueue.add(card);
+  if (!cardTitleResizeScheduled) {
+    cardTitleResizeScheduled = true;
+    requestAnimationFrame(flushCardTitleAutosizeQueue);
+  }
+}
+
+function flushCardTitleAutosizeQueue() {
+  cardTitleResizeScheduled = false;
+  if (!cardTitleResizeQueue.size) return;
+  cardTitleResizeQueue.forEach(card => {
+    applyCardTitleAutosize(card);
+  });
+  cardTitleResizeQueue.clear();
+}
+
+function applyCardTitleAutosize(card) {
+  if (!card) return;
+  const titleEl = card.querySelector('.movie-card-header .title') || card.querySelector('.card-header .title');
+  if (!titleEl) return;
+  autosizeTitleElement(titleEl);
+}
+
+function autosizeTitleElement(titleEl) {
+  if (!titleEl) return;
+  const container = titleEl.parentElement;
+  const availableWidth = container?.clientWidth || titleEl.clientWidth;
+  if (!availableWidth) return;
+  if (!titleEl.dataset.baseFontSize) {
+    const computed = window.getComputedStyle(titleEl);
+    titleEl.dataset.baseFontSize = computed.fontSize || '16px';
+  }
+  titleEl.classList.add('single-line-title');
+  titleEl.style.fontSize = titleEl.dataset.baseFontSize;
+  const baseFontPx = parseFloat(titleEl.dataset.baseFontSize) || 16;
+  let fontPx = baseFontPx;
+  const minFontPx = Math.max(baseFontPx * 0.65, 10);
+  let iterations = 0;
+  while (titleEl.scrollWidth > availableWidth && fontPx > minFontPx && iterations < 24) {
+    fontPx -= 0.5;
+    titleEl.style.fontSize = `${fontPx}px`;
+    iterations += 1;
+  }
+}
+
+const recalcCardTitleSizes = debounce(() => {
+  document.querySelectorAll('.single-line-title').forEach(titleEl => autosizeTitleElement(titleEl));
+}, 200);
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', () => {
+    recalcCardTitleSizes();
+  });
 }
 
 function buildMovieCardSummary(listType, item, context = {}) {
@@ -3587,6 +3652,7 @@ function updateCollapsibleCardStates(listType) {
       ? expandedSet.has(card.dataset.id)
       : expandedSet === card.dataset.id;
     card.classList.toggle('expanded', isMatch);
+    queueCardTitleAutosize(card);
   });
 }
 
