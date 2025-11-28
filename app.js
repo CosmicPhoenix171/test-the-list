@@ -172,6 +172,18 @@ function getDisplayCache(listType) {
   return map[listType];
 }
 
+function resolveCardRenderItem(listType, entryId, fallbackId) {
+  if (!listType) return null;
+  const cache = getDisplayCache(listType) || {};
+  if (entryId && cache[entryId]) {
+    return cache[entryId];
+  }
+  if (fallbackId && cache[fallbackId]) {
+    return cache[fallbackId];
+  }
+  return null;
+}
+
 function invalidateSeriesCrossListCache(options = {}) {
   const { schedule = true } = options;
   seriesIndexVersion += 1;
@@ -200,13 +212,23 @@ function refreshAllSeriesCards() {
       return;
     }
     const entryId = card.dataset.entryId || cardId;
-    const cache = getDisplayCache(listType) || {};
-    const item = cache[entryId] || cache[cardId];
+    const item = resolveCardRenderItem(listType, entryId, cardId);
     if (!item) {
       return;
     }
     renderMovieCardContent(card, listType, cardId, item, entryId);
   });
+}
+
+function refreshSeriesCardContent(card) {
+  if (!card) return;
+  const listType = card.dataset.listType || '';
+  const cardId = card.dataset.id || '';
+  if (!listType || !cardId) return;
+  const entryId = card.dataset.entryId || cardId;
+  const item = resolveCardRenderItem(listType, entryId, cardId);
+  if (!item) return;
+  renderMovieCardContent(card, listType, cardId, item, entryId);
 }
 
 function formatLibraryStatNumber(value) {
@@ -4518,7 +4540,11 @@ function updateCollapsibleCardStates(listType) {
     const isMatch = expandedSet instanceof Set
       ? expandedSet.has(card.dataset.id)
       : expandedSet === card.dataset.id;
+    const wasExpanded = card.classList.contains('expanded');
     card.classList.toggle('expanded', isMatch);
+    if (wasExpanded !== isMatch) {
+      refreshSeriesCardContent(card);
+    }
     queueCardTitleAutosize(card);
   });
 }
