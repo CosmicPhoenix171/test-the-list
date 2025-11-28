@@ -108,6 +108,9 @@ const suggestionForms = new Set();
 let globalSuggestionClickBound = false;
 let activeSeasonEditor = null;
 const seriesGroups = {};
+const crossListSeriesCache = new Map();
+let seriesIndexVersion = 0;
+let crossSeriesRefreshScheduled = false;
 const COLLAPSIBLE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
 const INTRO_SESSION_KEY = '__THE_LIST_INTRO_SEEN__';
@@ -167,6 +170,43 @@ function getDisplayCacheMap() {
 function getDisplayCache(listType) {
   const map = getDisplayCacheMap();
   return map[listType];
+}
+
+function invalidateSeriesCrossListCache(options = {}) {
+  const { schedule = true } = options;
+  seriesIndexVersion += 1;
+  crossListSeriesCache.clear();
+  if (schedule) {
+    scheduleCrossSeriesRefresh();
+  }
+}
+
+function scheduleCrossSeriesRefresh() {
+  if (crossSeriesRefreshScheduled) return;
+  if (typeof window === 'undefined') return;
+  crossSeriesRefreshScheduled = true;
+  window.requestAnimationFrame(() => {
+    crossSeriesRefreshScheduled = false;
+    refreshAllSeriesCards();
+  });
+}
+
+function refreshAllSeriesCards() {
+  if (typeof document === 'undefined') return;
+  document.querySelectorAll('.card.collapsible.movie-card').forEach(card => {
+    const listType = card.dataset.listType || '';
+    const cardId = card.dataset.id || '';
+    if (!listType || !cardId) {
+      return;
+    }
+    const entryId = card.dataset.entryId || cardId;
+    const cache = getDisplayCache(listType) || {};
+    const item = cache[entryId] || cache[cardId];
+    if (!item) {
+      return;
+    }
+    renderMovieCardContent(card, listType, cardId, item, entryId);
+  });
 }
 
 function formatLibraryStatNumber(value) {
@@ -1809,6 +1849,7 @@ function loadFinishedList(listType) {
   const finishedRef = ref(db, `users/${currentUser.uid}/finished/${listType}`);
   const off = onValue(finishedRef, (snap) => {
     finishedCaches[listType] = snap.val() || {};
+    invalidateSeriesCrossListCache();
     if (showFinishedOnly) {
       renderUnifiedLibrary();
       updateLibraryRuntimeStats();
@@ -1838,6 +1879,7 @@ function createEl(tag, classNames = '', options = {}) {
 // Render list items
 function renderList(listType, data) {
   listCaches[listType] = data;
+  invalidateSeriesCrossListCache({ schedule: false });
   const container = document.getElementById(`${listType}-list`);
   if (container) {
     container.innerHTML = '';
@@ -1910,6 +1952,7 @@ function renderList(listType, data) {
 
   renderUnifiedLibrary();
   refreshFranchiseLibraryMatches();
+  scheduleCrossSeriesRefresh();
 }
 
 // ============================================================================
@@ -2718,6 +2761,7 @@ function prepareCollapsibleRecords(listType, entries) {
         id: entry.id,
         item: entry.item,
         order: entry.order,
+        listType,
       }));
       leaderMembersByCardId.set(leader.id, compactEntries);
     }
@@ -2815,7 +2859,8 @@ function renderMovieCardContent(card, listType, cardId, item, entryId = cardId) 
   card.dataset.entryId = entryId;
   card.querySelectorAll('.movie-card-summary, .movie-card-details').forEach(el => el.remove());
   const isExpanded = card.classList.contains('expanded');
-  const seriesEntries = isCollapsibleList(listType) ? getSeriesGroupEntries(listType, cardId) : null;
+  const baseSeriesEntries = isCollapsibleList(listType) ? getSeriesGroupEntries(listType, cardId) : null;
+  const seriesEntries = mergeSeriesEntriesAcrossLists(listType, cardId, item, baseSeriesEntries);
   const summary = buildMovieCardSummary(listType, item, { cardId, entryId, seriesEntries, isExpanded });
   const details = buildMovieCardDetails(listType, cardId, entryId, item, { seriesEntries, isExpanded });
   card.insertBefore(summary, card.firstChild || null);
@@ -3894,6 +3939,102 @@ function getSeriesGroupEntries(listType, cardId) {
   return entries.slice();
 }
 
+function collectSeriesEntriesAcrossLists(seriesName) {
+  const normalizedKey = normalizeTitleKey(seriesName);
+  if (!normalizedKey) return [];
+  const cached = crossListSeriesCache.get(normalizedKey);
+  if (cached && cached.version === seriesIndexVersion) {
+    return cached.entries.slice();
+  }
+  const entries = [];
+  const cacheMap = getDisplayCacheMap();
+  COLLAPSIBLE_LISTS.forEach(type => {
+    const pool = cacheMap[type];
+    if (!pool) return;
+    Object.entries(pool).forEach(([id, item]) => {
+      if (!item || !item.seriesName) return;
+      if (normalizeTitleKey(item.seriesName) !== normalizedKey) return;
+      entries.push({ id, item, listType: type, order: numericSeriesOrder(item.seriesOrder) });
+    });
+  });
+  crossListSeriesCache.set(normalizedKey, { version: seriesIndexVersion, entries });
+  return entries.slice();
+}
+
+function mergeSeriesEntriesAcrossLists(listType, cardId, displayItem, primaryEntries) {
+  const baseEntries = Array.isArray(primaryEntries) ? primaryEntries.slice() : [];
+  const seriesName = resolveSeriesNameFromEntries(baseEntries, displayItem);
+  if (!seriesName) {
+    return baseEntries.length ? baseEntries : null;
+  }
+  const merged = [];
+  const seen = new Set();
+  const addEntry = (entry, fallbackListType = listType) => {
+    if (!entry || !entry.item) return;
+    const entryListType = entry.listType || fallbackListType;
+    const entryId = entry.id || cardId;
+    const key = buildSeriesEntryKey(entryListType, entryId, entry.item);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push({
+      id: entryId,
+      item: entry.item,
+      order: entry.order ?? numericSeriesOrder(entry.item?.seriesOrder),
+      listType: entryListType,
+    });
+  };
+  baseEntries.forEach(entry => addEntry(entry, listType));
+  if (!baseEntries.length && displayItem) {
+    addEntry({ id: cardId, item: displayItem, listType, order: numericSeriesOrder(displayItem.seriesOrder) }, listType);
+  }
+  const crossEntries = collectSeriesEntriesAcrossLists(seriesName);
+  crossEntries.forEach(entry => addEntry(entry, entry.listType));
+  if (!merged.length) return null;
+  merged.sort(compareSeriesEntries);
+  return merged;
+}
+
+function resolveSeriesNameFromEntries(entries, fallbackItem) {
+  if (Array.isArray(entries)) {
+    for (const entry of entries) {
+      const candidate = entry?.item?.seriesName;
+      if (candidate) return candidate;
+    }
+  }
+  if (fallbackItem && fallbackItem.seriesName) {
+    return fallbackItem.seriesName;
+  }
+  return '';
+}
+
+function buildSeriesEntryKey(listType, entryId, item) {
+  const safeType = listType || 'unknown';
+  if (entryId) {
+    return `${safeType}:${entryId}`;
+  }
+  const titleKey = titleSortKey(item?.title || '');
+  const yearKey = sanitizeYear(item?.year || '') || '----';
+  return `${safeType}:${titleKey}:${yearKey}`;
+}
+
+function compareSeriesEntries(a, b) {
+  const orderA = numericSeriesOrder(a?.order ?? a?.item?.seriesOrder);
+  const orderB = numericSeriesOrder(b?.order ?? b?.item?.seriesOrder);
+  const safeA = orderA === null || orderA === undefined ? Number.POSITIVE_INFINITY : orderA;
+  const safeB = orderB === null || orderB === undefined ? Number.POSITIVE_INFINITY : orderB;
+  if (safeA !== safeB) return safeA - safeB;
+  const yearA = parseInt(sanitizeYear(a?.item?.year || ''), 10) || 9999;
+  const yearB = parseInt(sanitizeYear(b?.item?.year || ''), 10) || 9999;
+  if (yearA !== yearB) return yearA - yearB;
+  const titleA = titleSortKey(a?.item?.title || '');
+  const titleB = titleSortKey(b?.item?.title || '');
+  if (titleA < titleB) return -1;
+  if (titleA > titleB) return 1;
+  const typeA = (a?.listType || '').toString();
+  const typeB = (b?.listType || '').toString();
+  return typeA.localeCompare(typeB);
+}
+
 function formatSeriesEntryLabel(entry) {
   const { item } = entry;
   if (!item) return '(unknown entry)';
@@ -3912,6 +4053,7 @@ function formatSeriesEntryLabel(entry) {
 function buildSeriesTreeNode(listType, entry, fallbackIndex = 0) {
   if (!entry || !entry.item) return null;
   const { item } = entry;
+  const entryListType = entry.listType || listType;
   const node = createEl('div', 'series-tree-node');
   node.dataset.entryId = entry.id || '';
 
@@ -3926,6 +4068,10 @@ function buildSeriesTreeNode(listType, entry, fallbackIndex = 0) {
   const body = createEl('div', 'series-tree-body');
   const titleRow = createEl('div', 'series-tree-title-row');
   titleRow.appendChild(createEl('div', 'series-tree-node-title', { text: item.title || '(no title)' }));
+  const mediaLabel = buildSeriesTreeMediaLabel(entryListType);
+  if (mediaLabel) {
+    titleRow.appendChild(mediaLabel);
+  }
   const statusBadge = buildSeriesTreeStatusBadge(item);
   if (statusBadge) {
     titleRow.appendChild(statusBadge);
@@ -3985,6 +4131,15 @@ function buildSeriesTreeStatusBadge(item) {
   if (status.state) {
     badge.dataset.state = status.state;
   }
+  return badge;
+}
+
+function buildSeriesTreeMediaLabel(listType) {
+  if (!listType) return null;
+  const label = MEDIA_TYPE_LABELS[listType];
+  if (!label) return null;
+  const badge = createEl('span', 'series-tree-media', { text: label });
+  badge.dataset.type = listType;
   return badge;
 }
 
