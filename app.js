@@ -2986,7 +2986,16 @@ function buildMovieArtwork(item, context = {}) {
       stackClasses.push('artwork-deck', 'artwork-deck-expanded');
     }
     const stack = createEl('div', stackClasses.join(' '));
-    stackItems.slice(0, 3).forEach((entry, index) => {
+    const visibleItems = stackItems.slice(0, 3);
+    const { baseStep, hoverStep } = computeDeckStepValues({
+      isExpanded: Boolean(context.isExpanded),
+      visibleCount: visibleItems.length,
+    });
+    if (!Number.isNaN(baseStep)) {
+      stack.style.setProperty('--deck-step', `${baseStep}px`);
+      stack.style.setProperty('--deck-hover-step', `${hoverStep}px`);
+    }
+    visibleItems.forEach((entry, index) => {
       const art = buildPosterNode(entry.poster, entry.title, index === 0);
       art.classList.add('artwork-stack-item');
       stack.appendChild(art);
@@ -3008,6 +3017,21 @@ function buildMovieArtwork(item, context = {}) {
   }
   wrapper.appendChild(createEl('div', 'artwork placeholder', { text: 'No Poster' }));
   return wrapper;
+}
+
+function computeDeckStepValues({ isExpanded = false, visibleCount = 0 } = {}) {
+  if (visibleCount <= 1) {
+    return { baseStep: 0, hoverStep: 0 };
+  }
+  const deckWidth = isExpanded ? 260 : 175;
+  const posterWidth = isExpanded ? 160 : 112;
+  const availableShift = Math.max(deckWidth - posterWidth, 12);
+  const minStep = Math.max(12, posterWidth * 0.15);
+  const maxStep = Math.max(minStep, posterWidth * 0.72);
+  const rawStep = availableShift / Math.max(visibleCount - 1, 1);
+  const baseStep = Math.min(maxStep, Math.max(minStep, rawStep));
+  const hoverStep = Math.min(baseStep * 1.75, maxStep * 1.25);
+  return { baseStep, hoverStep };
 }
 
 function buildPosterNode(posterUrl, title = '', isPrimary = false) {
