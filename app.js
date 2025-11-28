@@ -2811,9 +2811,10 @@ function renderMovieCardContent(card, listType, cardId, item, entryId = cardId) 
   if (!card) return;
   card.dataset.entryId = entryId;
   card.querySelectorAll('.movie-card-summary, .movie-card-details').forEach(el => el.remove());
+  const isExpanded = card.classList.contains('expanded');
   const seriesEntries = isCollapsibleList(listType) ? getSeriesGroupEntries(listType, cardId) : null;
-  const summary = buildMovieCardSummary(listType, item, { cardId, entryId, seriesEntries });
-  const details = buildMovieCardDetails(listType, cardId, entryId, item, { seriesEntries });
+  const summary = buildMovieCardSummary(listType, item, { cardId, entryId, seriesEntries, isExpanded });
+  const details = buildMovieCardDetails(listType, cardId, entryId, item, { seriesEntries, isExpanded });
   card.insertBefore(summary, card.firstChild || null);
   card.appendChild(details);
   restoreActiveSeasonEditor(card);
@@ -2905,9 +2906,10 @@ function buildMovieArtwork(item, context = {}) {
   const wrapper = createEl('div', 'artwork-wrapper');
   const seriesEntries = Array.isArray(context.seriesEntries) ? context.seriesEntries : [];
   const stackItems = buildSeriesPosterStackItems(item, seriesEntries);
-  if (stackItems.length > 1) {
+  const shouldStack = !context.isExpanded && stackItems.length > 1;
+  if (shouldStack) {
     wrapper.classList.add('artwork-stack-wrapper');
-    const stack = createEl('div', 'artwork-stack');
+    const stack = createEl('div', 'artwork-stack artwork-deck');
     stackItems.slice(0, 3).forEach((entry, index) => {
       const art = buildPosterNode(entry.poster, entry.title, index === 0);
       art.classList.add('artwork-stack-item');
@@ -2921,7 +2923,9 @@ function buildMovieArtwork(item, context = {}) {
     return wrapper;
   }
 
-  const posterNode = buildPosterNode(item?.poster, item?.title || 'Poster');
+  const fallbackPoster = stackItems.length ? stackItems[0].poster : '';
+  const fallbackTitle = stackItems.length ? stackItems[0].title : '';
+  const posterNode = buildPosterNode(item?.poster || fallbackPoster, item?.title || fallbackTitle || 'Poster');
   if (posterNode) {
     wrapper.appendChild(posterNode);
     return wrapper;
