@@ -473,7 +473,9 @@ let wheelSpinnerEl = null;
 let wheelResultEl = null;
 let wheelModalState = null;
 const WHEEL_SPIN_AUDIO_SRC = 'spin-boost.mp3';
+const WHEEL_AUDIO_MUTE_KEY = '__THE_LIST_WHEEL_MUTE__';
 let wheelSpinAudio = null;
+let wheelAudioMuted = safeStorageGet(WHEEL_AUDIO_MUTE_KEY) === '1';
 const FINISH_TIME_YEAR_THRESHOLD_MINUTES = 524160;
 const FINISH_TIME_CELEBRATION_DURATION_MS = 4000;
 let finishTimeCelebrationTriggered = false;
@@ -7917,6 +7919,7 @@ function getWheelSpinAudio() {
 }
 
 function startWheelSpinAudio() {
+  if (wheelAudioMuted) return;
   const audio = getWheelSpinAudio();
   if (!audio) return;
   try {
@@ -7942,13 +7945,21 @@ function stopWheelSpinAudio() {
   }
 }
 
+function stopFinishTimeCelebrationAudio() {
+  if (!finishTimeCelebrationAudio) return;
+  try {
+    finishTimeCelebrationAudio.pause();
+  } catch (err) {
+    console.warn('Finish time celebration audio stop failed', err);
+  }
+  finishTimeCelebrationAudio = null;
+}
+
 function playFinishTimeCelebrationSound() {
+  if (wheelAudioMuted) return;
   if (typeof Audio === 'undefined') return;
   try {
-    if (finishTimeCelebrationAudio) {
-      finishTimeCelebrationAudio.pause();
-      finishTimeCelebrationAudio = null;
-    }
+    stopFinishTimeCelebrationAudio();
     const celebratoryAudio = new Audio(WHEEL_SPIN_AUDIO_SRC);
     celebratoryAudio.volume = 0.7;
     celebratoryAudio.play().catch(err => {
@@ -7974,6 +7985,11 @@ function playFinishTimeCelebrationSound() {
 
 function handleFinishTimeAudioTrigger(totalMinutes) {
   if (!Number.isFinite(totalMinutes)) return;
+  if (wheelAudioMuted) {
+    stopFinishTimeCelebrationAudio();
+    finishTimeCelebrationTriggered = false;
+    return;
+  }
   const threshold = FINISH_TIME_YEAR_THRESHOLD_MINUTES;
   if (totalMinutes >= threshold) {
     if (!finishTimeCelebrationTriggered) {
@@ -7986,7 +8002,25 @@ function handleFinishTimeAudioTrigger(totalMinutes) {
     }
   } else {
     finishTimeCelebrationTriggered = false;
+    stopFinishTimeCelebrationAudio();
   }
+}
+
+function updateWheelMuteButtonState(button) {
+  if (!button) return;
+  const label = wheelAudioMuted ? 'Unmute Sound' : 'Mute Sound';
+  button.textContent = label;
+  button.setAttribute('aria-pressed', wheelAudioMuted ? 'true' : 'false');
+}
+
+function toggleWheelAudioMute(button) {
+  wheelAudioMuted = !wheelAudioMuted;
+  safeStorageSet(WHEEL_AUDIO_MUTE_KEY, wheelAudioMuted ? '1' : '0');
+  if (wheelAudioMuted) {
+    stopWheelSpinAudio();
+    stopFinishTimeCelebrationAudio();
+  }
+  updateWheelMuteButtonState(button);
 }
 
 function setupWheelModal() {
@@ -8010,6 +8044,7 @@ function openWheelModal() {
 
   const sourceSelect = modal.querySelector('[data-wheel-source]');
   const spinButton = modal.querySelector('[data-wheel-spin]');
+  const muteButton = modal.querySelector('[data-wheel-mute]');
   const spinnerEl = modal.querySelector('[data-wheel-spinner]');
   const resultEl = modal.querySelector('[data-wheel-result]');
   const closeBtn = modal.querySelector('[data-wheel-close]');
@@ -8032,6 +8067,13 @@ function openWheelModal() {
   };
   if (spinButton) {
     spinButton.addEventListener('click', spinHandler);
+  }
+
+  let muteHandler = null;
+  if (muteButton) {
+    updateWheelMuteButtonState(muteButton);
+    muteHandler = () => toggleWheelAudioMute(muteButton);
+    muteButton.addEventListener('click', muteHandler);
   }
 
   const closeHandler = () => closeWheelModal();
@@ -8060,6 +8102,8 @@ function openWheelModal() {
     spinHandler,
     closeBtn,
     closeHandler,
+    muteButton,
+    muteHandler,
     backdropHandler,
     keyHandler,
   };
@@ -8072,6 +8116,9 @@ function closeWheelModal() {
     }
     if (wheelModalState.closeBtn && wheelModalState.closeHandler) {
       wheelModalState.closeBtn.removeEventListener('click', wheelModalState.closeHandler);
+    }
+    if (wheelModalState.muteButton && wheelModalState.muteHandler) {
+      wheelModalState.muteButton.removeEventListener('click', wheelModalState.muteHandler);
     }
     if (wheelModalState.backdrop && wheelModalState.backdropHandler) {
       wheelModalState.backdrop.removeEventListener('click', wheelModalState.backdropHandler);
