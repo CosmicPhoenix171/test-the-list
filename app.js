@@ -474,6 +474,10 @@ let wheelResultEl = null;
 let wheelModalState = null;
 const WHEEL_SPIN_AUDIO_SRC = 'spin-boost.mp3';
 let wheelSpinAudio = null;
+const FINISH_TIME_YEAR_THRESHOLD_MINUTES = 524160;
+const FINISH_TIME_CELEBRATION_DURATION_MS = 4000;
+let finishTimeCelebrationTriggered = false;
+let finishTimeCelebrationAudio = null;
 let notificationPopoverOpen = false;
 const addModalTrigger = document.getElementById('open-add-modal');
 const addFormTemplatesContainer = document.getElementById('add-form-templates');
@@ -2283,9 +2287,11 @@ function updateLibraryRuntimeStats() {
 
   if (stats.totalMinutes > 0) {
     animateRuntimeProgression(runtimeChip, stats.totalMinutes);
+    handleFinishTimeAudioTrigger(stats.totalMinutes);
   } else {
     const valueEl = runtimeChip.querySelector('.library-stat-value');
     if (valueEl) valueEl.textContent = 'Runtime info unavailable';
+    handleFinishTimeAudioTrigger(0);
   }
 
   const runtimeSummaryText = stats.totalMinutes > 0
@@ -7933,6 +7939,53 @@ function stopWheelSpinAudio() {
     wheelSpinAudio.currentTime = 0;
   } catch (err) {
     console.warn('Wheel audio stop failed', err);
+  }
+}
+
+function playFinishTimeCelebrationSound() {
+  if (typeof Audio === 'undefined') return;
+  try {
+    if (finishTimeCelebrationAudio) {
+      finishTimeCelebrationAudio.pause();
+      finishTimeCelebrationAudio = null;
+    }
+    const celebratoryAudio = new Audio(WHEEL_SPIN_AUDIO_SRC);
+    celebratoryAudio.volume = 0.7;
+    celebratoryAudio.play().catch(err => {
+      console.warn('Finish time celebration audio blocked', err);
+    });
+    finishTimeCelebrationAudio = celebratoryAudio;
+    const cleanup = () => {
+      if (finishTimeCelebrationAudio === celebratoryAudio) {
+        finishTimeCelebrationAudio = null;
+      }
+    };
+    celebratoryAudio.addEventListener('ended', cleanup, { once: true });
+    setTimeout(() => {
+      if (finishTimeCelebrationAudio === celebratoryAudio) {
+        celebratoryAudio.pause();
+        cleanup();
+      }
+    }, FINISH_TIME_CELEBRATION_DURATION_MS);
+  } catch (err) {
+    console.warn('Finish time celebration audio failed', err);
+  }
+}
+
+function handleFinishTimeAudioTrigger(totalMinutes) {
+  if (!Number.isFinite(totalMinutes)) return;
+  const threshold = FINISH_TIME_YEAR_THRESHOLD_MINUTES;
+  if (totalMinutes >= threshold) {
+    if (!finishTimeCelebrationTriggered) {
+      finishTimeCelebrationTriggered = true;
+      const wheelAudio = wheelSpinAudio;
+      if (wheelAudio && !wheelAudio.paused) {
+        return;
+      }
+      playFinishTimeCelebrationSound();
+    }
+  } else {
+    finishTimeCelebrationTriggered = false;
   }
 }
 
