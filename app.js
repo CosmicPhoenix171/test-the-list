@@ -3517,8 +3517,7 @@ function resolveSeriesCardTitleParts(item, context = {}) {
   const defaultTitle = item?.title || '(no title)';
   const seriesName = resolveSeriesNameFromEntries(context.seriesEntries, item);
   if (!context.isExpanded && seriesName) {
-    const subtitle = seriesName !== defaultTitle ? defaultTitle : '';
-    return { titleText: seriesName, subtitleText: subtitle };
+    return { titleText: seriesName, subtitleText: '' };
   }
   return { titleText: defaultTitle, subtitleText: '' };
 }
