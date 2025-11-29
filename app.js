@@ -8449,7 +8449,7 @@ function animateWheelSequence(candidates, chosenIndex, listType, finalDisplayEnt
   }
   sequence.push(finalEntry);
 
-  const totalDuration = 7000; // keep spin length consistent regardless of candidate count
+  const totalDuration = 15000; // lengthen spin to 15 seconds for dramatic effect
   const stepCount = sequence.length;
   const lastIndex = stepCount - 1;
   const schedule = [];
