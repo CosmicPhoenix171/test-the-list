@@ -4927,7 +4927,18 @@ function updateCachedSeriesOrderValue(entry, newOrder) {
   });
 }
 
-async function rebalanceSeriesOrders(listType, seriesName) {
+function updateLocalItemCaches(listType, itemId, changes) {
+  if (!listType || !itemId || !changes) return;
+  [listCaches, finishedCaches].forEach(cacheMap => {
+    const store = cacheMap && cacheMap[listType];
+    if (store && store[itemId]) {
+      Object.assign(store[itemId], changes);
+    }
+  });
+}
+
+async function rebalanceSeriesOrders(listType, seriesName, options = {}) {
+  const { preferredEntryId = null, preferredOrder = null } = options;
   if (!listType) return;
   const normalized = normalizeTitleKey(seriesName || '');
   if (!normalized) return;
@@ -4947,6 +4958,21 @@ async function rebalanceSeriesOrders(listType, seriesName) {
   });
   if (!collected.length) return;
   collected.sort(compareSeriesEntries);
+
+  if (preferredEntryId) {
+    const targetIndex = collected.findIndex(entry => entry.id === preferredEntryId);
+    if (targetIndex !== -1) {
+      const [targetEntry] = collected.splice(targetIndex, 1);
+      let insertIndex = collected.length;
+      const numericPref = preferredOrder !== null && preferredOrder !== undefined
+        ? Number(preferredOrder)
+        : Number.NaN;
+      if (Number.isFinite(numericPref)) {
+        insertIndex = Math.max(0, Math.min(numericPref - 1, collected.length));
+      }
+      collected.splice(insertIndex, 0, targetEntry);
+    }
+  }
   const orderMap = new Map();
   const updateTasks = [];
   collected.forEach((entry, index) => {
@@ -4972,8 +4998,9 @@ async function rebalanceSeriesOrders(listType, seriesName) {
 function applySeriesOrderSnapshotUpdates(defaultListType, orderMap) {
   if (!orderMap || !orderMap.size) return;
   const applyToStore = (store, fallbackListType) => {
-    if (!store) return;
+    if (!store || typeof store.forEach !== 'function') return;
     store.forEach(entries => {
+      if (!entries) return;
       entries.forEach(entry => {
         if (!entry) return;
         const key = buildSeriesEntryKey(entry.listType || fallbackListType, entry.id, entry.item);
@@ -7729,13 +7756,19 @@ function openEditModal(listType, itemId, item) {
     try {
       if (targetListType === listType) {
         await updateItem(listType, itemId, payload);
+        updateLocalItemCaches(listType, itemId, payload);
         if (!isBooksTarget) {
           const rebalanceJobs = [];
-          if (originalSeriesName && originalSeriesName !== (payload.seriesName || '')) {
+          const normalizedOriginal = normalizeTitleKey(originalSeriesName);
+          const normalizedNew = normalizeTitleKey(payload.seriesName || '');
+          if (originalSeriesName && normalizedOriginal && normalizedOriginal !== normalizedNew) {
             rebalanceJobs.push(rebalanceSeriesOrders(listType, originalSeriesName));
           }
-          if (payload.seriesName) {
-            rebalanceJobs.push(rebalanceSeriesOrders(listType, payload.seriesName));
+          if (normalizedNew) {
+            rebalanceJobs.push(rebalanceSeriesOrders(listType, payload.seriesName, {
+              preferredEntryId: itemId,
+              preferredOrder: payload.seriesOrder,
+            }));
           }
           if (rebalanceJobs.length) {
             await Promise.all(rebalanceJobs);
