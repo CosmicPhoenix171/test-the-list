@@ -35,6 +35,134 @@ const tmSeasonThemes = {
   },
 };
 
+// ============================================================================
+// Global Config, Keys, and Shared State
+// ============================================================================
+
+const APP_VERSION = globalThis.APP_VERSION || '2025.11.28-dev';
+
+const firebaseConfig = globalThis.firebaseConfig
+  || globalThis.FIREBASE_CONFIG
+  || {
+    apiKey: globalThis.FIREBASE_API_KEY || '',
+    authDomain: globalThis.FIREBASE_AUTH_DOMAIN || '',
+    projectId: globalThis.FIREBASE_PROJECT_ID || '',
+    storageBucket: globalThis.FIREBASE_STORAGE_BUCKET || '',
+    messagingSenderId: globalThis.FIREBASE_MESSAGING_SENDER_ID || '',
+    appId: globalThis.FIREBASE_APP_ID || '',
+    measurementId: globalThis.FIREBASE_MEASUREMENT_ID || '',
+    databaseURL: globalThis.FIREBASE_DATABASE_URL || '',
+  };
+
+const TMDB_API_KEY = globalThis.TMDB_API_KEY || '';
+const TMDB_API_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
+const TMDB_KEYWORD_DISCOVER_PAGE_LIMIT = 5;
+const TMDB_KEYWORD_DISCOVER_MAX_RESULTS = 40;
+
+const GOOGLE_BOOKS_API_KEY = globalThis.GOOGLE_BOOKS_API_KEY || '';
+const GOOGLE_BOOKS_API_URL = 'https://www.googleapis.com/books/v1';
+
+const MYANIMELIST_ANIME_URL = 'https://myanimelist.net/anime';
+const JIKAN_API_BASE_URL = 'https://api.jikan.moe/v4';
+const JIKAN_REQUEST_MIN_DELAY_MS = 1200;
+const JIKAN_RETRY_BASE_DELAY_MS = 2000;
+const JIKAN_MAX_RETRIES = 4;
+
+const INTRO_SESSION_KEY = '__THE_LIST_INTRO__';
+const NOTIFICATION_STORAGE_KEY = '__THE_LIST_NOTIFICATIONS__';
+const NOTIFICATION_SEEN_KEY = '__THE_LIST_NOTIFICATIONS_SEEN__';
+const ANIME_FRANCHISE_IGNORE_KEY = '__THE_LIST_ANIME_FRANCHISE_IGNORE_IDS__';
+
+const PRIMARY_LIST_TYPES = ['movies', 'tvShows', 'anime', 'books'];
+const MEDIA_TYPE_LABELS = {
+  movies: 'Movies',
+  tvShows: 'TV Shows',
+  anime: 'Anime',
+  books: 'Books',
+};
+const FRANCHISE_MEDIA_LABELS = {
+  movies: 'Film',
+  tvShows: 'Show',
+  anime: 'Anime',
+  books: 'Book',
+};
+const AUTOCOMPLETE_LISTS = new Set(PRIMARY_LIST_TYPES);
+const COLLAPSIBLE_LISTS = new Set(PRIMARY_LIST_TYPES);
+const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
+
+const LIST_LOAD_STAGGER_MS = 250;
+const DRAG_SCROLL_EDGE_PX = 120;
+const DRAG_SCROLL_STEP_PX = 32;
+const MAX_PERSISTED_NOTIFICATIONS = 20;
+const FINISH_RATING_MIN = 1;
+const FINISH_RATING_MAX = 5;
+const METADATA_SCHEMA_VERSION = 2;
+
+const RUNTIME_THRESHOLDS = {
+  MINUTES: { max: 60 },
+  HOURS: { max: 60 * 6 },
+  DAYS: { max: 60 * 24 * 7 },
+  WEEKS: { max: 60 * 24 * 7 * 4 },
+  MONTHS: { max: 60 * 24 * 30 * 6 },
+  YEARS: { max: Infinity },
+};
+
+const RUNTIME_PILL_UNITS = [
+  { key: 'minutes', label: 'Minutes' },
+  { key: 'hours', label: 'Hours' },
+  { key: 'days', label: 'Days' },
+  { key: 'weeks', label: 'Weeks' },
+  { key: 'months', label: 'Months' },
+  { key: 'years', label: 'Years' },
+];
+
+const ANIME_FRANCHISE_ALLOWED_FORMATS = new Set(['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA']);
+const ANIME_FRANCHISE_RELATION_TYPES = new Set([
+  'SEQUEL',
+  'PREQUEL',
+  'SUMMARY',
+  'ALTERNATIVE_SETTING',
+  'ALTERNATIVE_VERSION',
+  'SIDE_STORY',
+  'SPIN_OFF',
+  'PARENT_STORY',
+  'CHARACTER',
+  'COMPILATION',
+]);
+const ANIME_STATUS_PRIORITY = {
+  RELEASING: 4,
+  FINISHED: 3,
+  NOT_YET_RELEASED: 2,
+  HIATUS: 1,
+  CANCELLED: 0,
+};
+const ANIME_FRANCHISE_MAX_ENTRIES = 80;
+const ANIME_FRANCHISE_MAX_DEPTH = 3;
+const ANIME_FRANCHISE_SCAN_SERIES_LIMIT = 6;
+const ANIME_FRANCHISE_RESCAN_INTERVAL_MS = 1000 * 60 * 60 * 6;
+
+const listCaches = Object.create(null);
+const finishedCaches = Object.create(null);
+const actorFilters = PRIMARY_LIST_TYPES.reduce((acc, type) => {
+  acc[type] = '';
+  return acc;
+}, {});
+const sortModes = PRIMARY_LIST_TYPES.reduce((acc, type) => {
+  acc[type] = 'title';
+  return acc;
+}, {});
+
+const unifiedFilters = {
+  search: '',
+  types: new Set(PRIMARY_LIST_TYPES),
+};
+
+let appInitialized = false;
+let currentUser = null;
+let persistedNotifications = [];
+let notificationSignatureCache = new Set();
+
   function getSeasonalTheme(now = new Date()) {
     const month = now.getMonth();
     if (month === 11) return tmSeasonThemes.winter;
