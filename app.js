@@ -3622,13 +3622,13 @@ function collectMediaBadgeChips(listType, item, context = {}) {
     return buildTvStatChips(item);
   }
   if (listType === 'movies' || listType === 'anime') {
-    return buildSeriesBadgeChips(listType, context.cardId, item);
+    return buildSeriesBadgeChips(listType, context.cardId, item, context);
   }
   return [];
 }
 
-function buildSeriesBadgeChips(listType, cardId, item) {
-  const metrics = deriveSeriesBadgeMetrics(listType, cardId, item);
+function buildSeriesBadgeChips(listType, cardId, item, context = {}) {
+  const metrics = deriveSeriesBadgeMetrics(listType, cardId, item, context.seriesEntries);
   if (!metrics) return [];
   const chips = [];
   if (metrics.formatLabels.length) {
@@ -3777,10 +3777,12 @@ function parseEpisodeValue(value) {
   return 0;
 }
 
-function deriveSeriesBadgeMetrics(listType, cardId, fallbackItem) {
+function deriveSeriesBadgeMetrics(listType, cardId, fallbackItem, providedEntries = null) {
   const normalizedListType = listType || 'anime';
   let entries = [];
-  if (cardId && isCollapsibleList(normalizedListType)) {
+  if (providedEntries && Array.isArray(providedEntries) && providedEntries.length > 0) {
+    entries = providedEntries.map(entry => entry && entry.item).filter(Boolean);
+  } else if (cardId && isCollapsibleList(normalizedListType)) {
     const groupEntries = getSeriesGroupEntries(normalizedListType, cardId);
     if (groupEntries && groupEntries.length) {
       entries = groupEntries.map(entry => entry && entry.item).filter(Boolean);
