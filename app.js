@@ -5,18 +5,35 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  const tmSeasonThemes = {
-    winter: {
-      text: '❄',
-      color: '#c3e8ff',
-      glow: '0 0 18px rgba(195,232,255,0.85)',
-    },
-    halloween: {
-      text: '🎃',
-      color: '#ffb347',
-      glow: '0 0 18px rgba(255,138,0,0.85)',
-    },
-  };
+  setPersistence,
+  browserLocalPersistence,
+  onAuthStateChanged,
+  signOut as fbSignOut,
+} from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js';
+import {
+  getDatabase,
+  ref,
+  onValue,
+  push,
+  set,
+  update,
+  remove,
+  query,
+  orderByChild,
+} from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
+
+const tmSeasonThemes = {
+  winter: {
+    text: '❄',
+    color: '#c3e8ff',
+    glow: '0 0 18px rgba(195,232,255,0.85)',
+  },
+  halloween: {
+    text: '🎃',
+    color: '#ffb347',
+    glow: '0 0 18px rgba(255,138,0,0.85)',
+  },
+};
 
   function getSeasonalTheme(now = new Date()) {
     const month = now.getMonth();
