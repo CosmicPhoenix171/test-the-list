@@ -4833,20 +4833,7 @@ function buildMovieExtendedMeta(item) {
 
 function buildSeriesLine(item, className = 'series-line') {
   if (!item.seriesName) return null;
-  const parts = [`Series: ${item.seriesName}`];
-  if (item.seriesOrder !== undefined && item.seriesOrder !== null && item.seriesOrder !== '') {
-    parts.push(`Entry ${item.seriesOrder}`);
-  }
-  if (item.seriesSize) {
-    parts.push(`of ${item.seriesSize}`);
-  }
-  if (item.nextSequel) {
-    parts.push(`Next: ${item.nextSequel}`);
-  }
-  if (item.previousPrequel) {
-    parts.push(`Prev: ${item.previousPrequel}`);
-  }
-  return createEl('div', className, { text: parts.join(' • ') });
+  return createEl('div', className, { text: item.seriesName });
 }
 
 function buildMovieCastLine(item) {
