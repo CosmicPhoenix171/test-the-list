@@ -5,254 +5,550 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  setPersistence,
-  browserLocalPersistence,
-  signOut as fbSignOut,
-  onAuthStateChanged,
-} from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js';
-import {
-  getDatabase,
-  ref,
-  push,
-  set,
-  update,
-  remove,
-  onValue,
-  query,
-  orderByChild,
-  get
-} from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
+  const tmSeasonThemes = {
+    winter: {
+      text: '❄',
+      color: '#c3e8ff',
+      glow: '0 0 18px rgba(195,232,255,0.85)',
+    },
+    halloween: {
+      text: '🎃',
+      color: '#ffb347',
+      glow: '0 0 18px rgba(255,138,0,0.85)',
+    },
+  };
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyCWJpMYjSdV9awGRwJ3zyZ_9sDjUrnTu2I',
-  authDomain: 'the-list-a700d.firebaseapp.com',
-  databaseURL: 'https://the-list-a700d-default-rtdb.firebaseio.com',
-  projectId: 'the-list-a700d',
-  storageBucket: 'the-list-a700d.firebasestorage.app',
-  messagingSenderId: '24313817411',
-  appId: '1:24313817411:web:0aba69eaadade9843a27f6',
-  measurementId: 'G-YXJ2E2XG42',
-};
-
-// TMDb API powers metadata, autocomplete, and franchise info (recommended)
-// Create a key at https://www.themoviedb.org/settings/api and paste it here.
-const TMDB_API_KEY = '46dcf1eaa2ce4284037a00fdefca9bb8';
-const TMDB_API_BASE_URL = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
-const TMDB_KEYWORD_DISCOVER_PAGE_LIMIT = 3;
-const TMDB_KEYWORD_DISCOVER_MAX_RESULTS = 40;
-const GOOGLE_BOOKS_API_KEY = '';
-const GOOGLE_BOOKS_API_URL = 'https://www.googleapis.com/books/v1';
-const JIKAN_API_BASE_URL = 'https://api.jikan.moe/v4';
-const LIST_LOAD_STAGGER_MS = 600;
-const JIKAN_REQUEST_MIN_DELAY_MS = 500;
-const JIKAN_RETRY_BASE_DELAY_MS = 1500;
-const JIKAN_MAX_RETRIES = 2;
-const MYANIMELIST_ANIME_URL = 'https://myanimelist.net/anime';
-const METADATA_SCHEMA_VERSION = 4;
-const APP_VERSION = 'test-pages-2025.11.15';
-const ANIME_FRANCHISE_RELATION_TYPES = new Set([
-  'SEQUEL',
-  'PREQUEL',
-  'MAIN_STORY',
-  'SIDE_STORY',
-  'ALTERNATIVE',
-  'SPIN_OFF',
-  'COMPILATION',
-  'CONTAINS',
-  'PARENT',
-  'CHILD',
-  'OTHER'
-]);
-const ANIME_FRANCHISE_ALLOWED_FORMATS = new Set([
-  'TV',
-  'TV_SHORT',
-  'ONA',
-  'OVA',
-  'MOVIE',
-  'SPECIAL'
-]);
-const ANIME_FRANCHISE_MAX_DEPTH = 4;
-const ANIME_FRANCHISE_MAX_ENTRIES = 25;
-const ANIME_FRANCHISE_SCAN_SERIES_LIMIT = 4;
-const ANIME_FRANCHISE_RESCAN_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const ANIME_FRANCHISE_IGNORE_KEY = '__THE_LIST_ANIME_IGNORE__';
-const ANIME_STATUS_PRIORITY = {
-  RELEASING: 6,
-  NOT_YET_RELEASED: 5,
-  HIATUS: 4,
-  CANCELLED: 3,
-  FINISHED: 2,
-  UNKNOWN: 1,
-};
-const NOTIFICATION_STORAGE_KEY = '__THE_LIST_NOTIFICATIONS__';
-const MAX_PERSISTED_NOTIFICATIONS = 50;
-const NOTIFICATION_SEEN_KEY = '__THE_LIST_NOTIFICATIONS_SEEN__';
-
-// -----------------------
-// App state
-let appInitialized = false;
-let currentUser = null;
-const listeners = {};
-let tmdbWarningShown = false;
-let spinTimeouts = [];
-const actorFilters = { movies: '', tvShows: '', anime: '' };
-const expandedCards = { movies: new Set() };
-const sortModes = { movies: 'title', tvShows: 'title', anime: 'title', books: 'title' };
-const listCaches = {};
-const finishedCaches = {};
-const metadataRefreshInflight = new Set();
-const AUTOCOMPLETE_LISTS = new Set(['movies', 'tvShows', 'anime', 'books']);
-const PRIMARY_LIST_TYPES = ['movies', 'tvShows', 'anime', 'books'];
-const suggestionForms = new Set();
-let globalSuggestionClickBound = false;
-let activeSeasonEditor = null;
-const seriesGroups = {};
-const crossListSeriesCache = new Map();
-let seriesIndexVersion = 0;
-let crossSeriesRefreshScheduled = false;
-const seriesTreeDragState = {
-  activeNode: null,
-  listElement: null,
-  placeholder: null,
-  cardId: null,
-  listType: null,
-  cardElement: null,
-};
-let seriesTreeDragEventsBound = false;
-const COLLAPSIBLE_LISTS = new Set(['movies', 'tvShows', 'anime']);
-const SERIES_BULK_DELETE_LISTS = new Set(['movies', 'tvShows', 'anime']);
-const INTRO_SESSION_KEY = '__THE_LIST_INTRO_SEEN__';
-let introPlayed = safeStorageGet(INTRO_SESSION_KEY) === '1';
-const franchiseState = {
-  loaded: false,
-  records: [],
-};
-const franchiseDragState = {
-  activeEntryId: null,
-  activeFranchiseId: null,
-  activeTrack: null,
-  placeholder: null,
-};
-let franchiseDragEventsBound = false;
-const DRAG_SCROLL_EDGE_PX = 80;
-const DRAG_SCROLL_STEP_PX = 18;
-const FRANCHISE_MEDIA_LABELS = {
-  movie: 'Movie',
-  season: 'Season',
-  special: 'Special',
-};
-const jikanRequestQueue = [];
-let jikanQueueActive = false;
-let lastJikanRequestTime = 0;
-let persistedNotifications = [];
-let notificationSignatureCache = new Set();
-const finishedListeners = {};
-let showFinishedOnly = false;
-let libraryFullyLoaded = false;
-const unifiedFilters = {
-  search: '',
-  types: new Set(PRIMARY_LIST_TYPES),
-};
-const MEDIA_TYPE_LABELS = {
-  movies: 'Movies',
-  tvShows: 'TV Shows',
-  anime: 'Anime',
-  books: 'Books',
-};
-const FINISH_RATING_MIN = 1;
-const FINISH_RATING_MAX = 10;
-const RUNTIME_THRESHOLDS = {
-  MINUTES: { max: 60, color: 'minutes', label: 'minutes' },
-  HOURS: { max: 1440, color: 'hours', label: 'hours' },
-  DAYS: { max: 10080, color: 'days', label: 'days' },
-  WEEKS: { max: 43200, color: 'weeks', label: 'weeks' },
-  MONTHS: { max: 525600, color: 'months', label: 'months' },
-  YEARS: { color: 'years', label: 'years' }
-};
-
-const RUNTIME_PILL_UNITS = [
-  { key: 'minutes', label: 'Minutes' },
-  { key: 'hours', label: 'Hours' },
-  { key: 'days', label: 'Days' },
-  { key: 'weeks', label: 'Weeks' },
-  { key: 'months', label: 'Months' },
-  { key: 'years', label: 'Years' }
-];
-
-function getDisplayCacheMap() {
-  return showFinishedOnly ? finishedCaches : listCaches;
-}
-
-function getDisplayCache(listType) {
-  const map = getDisplayCacheMap();
-  return map[listType];
-}
-
-function resolveCardRenderItem(listType, entryId, fallbackId) {
-  if (!listType) return null;
-  const cache = getDisplayCache(listType) || {};
-  if (entryId && cache[entryId]) {
-    return cache[entryId];
+  function getSeasonalTheme(now = new Date()) {
+    const month = now.getMonth();
+    if (month === 11) return tmSeasonThemes.winter;
+    if (month === 9) return tmSeasonThemes.halloween;
+    return null;
   }
-  if (fallbackId && cache[fallbackId]) {
-    return cache[fallbackId];
+
+  function getCurrentTmTheme() {
+    return getSeasonalTheme();
   }
-  return null;
-}
 
-function invalidateSeriesCrossListCache(options = {}) {
-  const { schedule = true } = options;
-  seriesIndexVersion += 1;
-  crossListSeriesCache.clear();
-  if (schedule) {
-    scheduleCrossSeriesRefresh();
-  }
-}
+  function createRainEngine(config = {}) {
+    const {
+      layerId = 'tm-rain-layer',
+      layerClass = '',
+      triggerSelector = null,
+      triggerDatasetKey = '',
+      onTriggerBound = null,
+      spriteClassName = 'tm-sprite',
+      spriteDescriptorFactory = () => ({}),
+      pointerEnabled = true,
+      pointerConfig = {},
+      spawnConfig = {},
+    } = config;
 
-function scheduleCrossSeriesRefresh() {
-  if (crossSeriesRefreshScheduled) return;
-  if (typeof window === 'undefined') return;
-  crossSeriesRefreshScheduled = true;
-  window.requestAnimationFrame(() => {
-    crossSeriesRefreshScheduled = false;
-    refreshAllSeriesCards();
-  });
-}
+    const sprites = [];
+    let running = false;
+    let spawnTimer = null;
+    let rafId = null;
+    let layer = null;
+    let intensityMultiplier = 1;
+    const engineState = { payload: null };
 
-function refreshAllSeriesCards() {
-  if (typeof document === 'undefined') return;
-  document.querySelectorAll('.card.collapsible.movie-card').forEach(card => {
-    const listType = card.dataset.listType || '';
-    const cardId = card.dataset.id || '';
-    if (!listType || !cardId) {
-      return;
+    const {
+      gravity = 0.32,
+      bounce = 0.68,
+      friction = 0.995,
+      settleThreshold = 0.12,
+      wakeSpeed = 0.35,
+      supportAngleThreshold = 0.5,
+      supportDistanceEpsilon = 0.75,
+      spawnMinDelay = 320,
+      spawnMaxDelay = 900,
+      collisionIterations = 4,
+      maxVerticalSpeed = 24,
+      maxHorizontalSpeed = 12,
+      defaultSizeRange = [20, 46],
+    } = spawnConfig;
+
+    const {
+      pointerRadius = 48,
+      pointerPushStrength = 1.65,
+      pointerVelocityInfluence = 0.28,
+      pointerVelocityDecay = 0.86,
+      pointerActivityWindow = 220,
+    } = pointerConfig;
+
+    const pointerState = pointerEnabled ? {
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      active: false,
+      lastX: 0,
+      lastY: 0,
+      lastTime: 0,
+    } : null;
+    let pointerListenersAttached = false;
+
+    const clampValue = (value, min, max) => Math.min(max, Math.max(min, value));
+
+    function ensureLayer() {
+      if (layer) return layer;
+      layer = document.createElement('div');
+      layer.id = layerId || `rain-layer-${Math.random().toString(16).slice(2)}`;
+      if (layerClass) {
+        layer.className = layerClass;
+      }
+      document.body.appendChild(layer);
+      if (pointerEnabled) {
+        attachPointerListeners();
+      }
+      return layer;
     }
-    const entryId = card.dataset.entryId || cardId;
-    const item = resolveCardRenderItem(listType, entryId, cardId);
-    if (!item) {
-      return;
+
+    function bindTriggers() {
+      if (!triggerSelector) return;
+      document.querySelectorAll(triggerSelector).forEach(node => {
+        if (triggerDatasetKey && node.dataset[triggerDatasetKey] === 'true') return;
+        if (triggerDatasetKey) {
+          node.dataset[triggerDatasetKey] = 'true';
+        }
+        if (typeof onTriggerBound === 'function') {
+          onTriggerBound(node);
+        }
+        node.addEventListener('click', () => trigger());
+      });
     }
-    renderMovieCardContent(card, listType, cardId, item, entryId);
+
+    function trigger(payload, options = {}) {
+      if (payload !== undefined) {
+        engineState.payload = payload;
+      }
+      if (!running) {
+        startInternal();
+      } else if (!options.skipBoost) {
+        boostIntensity();
+      }
+    }
+
+    function startInternal() {
+      if (running) return;
+      running = true;
+      intensityMultiplier = 1;
+      ensureLayer();
+      spawnBurst(4 * intensityMultiplier);
+      scheduleNextSpawn();
+      tick();
+    }
+
+    function boostIntensity() {
+      intensityMultiplier *= 2;
+      spawnBurst(Math.max(4, Math.round(intensityMultiplier * 2)));
+      if (spawnTimer) {
+        clearTimeout(spawnTimer);
+        scheduleNextSpawn();
+      }
+    }
+
+    function scheduleNextSpawn() {
+      const delayScale = Math.max(1, intensityMultiplier);
+      const minDelay = Math.max(50, spawnMinDelay / delayScale);
+      const maxDelay = Math.max(minDelay + 10, spawnMaxDelay / delayScale);
+      spawnTimer = setTimeout(() => {
+        const batch = Math.max(1, Math.round(intensityMultiplier));
+        spawnBurst(batch);
+        scheduleNextSpawn();
+      }, minDelay + Math.random() * (maxDelay - minDelay));
+    }
+
+    function spawnBurst(count) {
+      for (let i = 0; i < count; i++) {
+        spawnSprite();
+      }
+    }
+
+    function spawnSprite() {
+      if (!layer) ensureLayer();
+      const randomSize = () => {
+        const [minSize, maxSize] = defaultSizeRange;
+        const span = Math.max(maxSize - minSize, 1);
+        return minSize + Math.random() * span;
+      };
+      let baseSize = randomSize();
+      const descriptor = typeof spriteDescriptorFactory === 'function'
+        ? spriteDescriptorFactory({ payload: engineState.payload, defaultSize: baseSize }) || {}
+        : {};
+      if (Number.isFinite(descriptor.size)) {
+        baseSize = descriptor.size;
+      }
+      const sprite = {
+        size: baseSize,
+        radius: Number.isFinite(descriptor.radius) ? descriptor.radius : baseSize / 2,
+        width: Number.isFinite(descriptor.width) ? descriptor.width : baseSize,
+        height: Number.isFinite(descriptor.height) ? descriptor.height : baseSize,
+        x: Math.random() * Math.max(window.innerWidth - baseSize, 1) + baseSize / 2,
+        y: -baseSize - Math.random() * 40,
+        vx: (Math.random() - 0.5) * 1.4,
+        vy: Math.random() * -1.5,
+        rotation: Math.random() * 360,
+        spin: Number.isFinite(descriptor.spin) ? descriptor.spin : (Math.random() - 0.5) * 120,
+        resting: false,
+        supported: false,
+      };
+      if (descriptor.state && typeof descriptor.state === 'object') {
+        Object.assign(sprite, descriptor.state);
+      }
+      const el = document.createElement('div');
+      el.className = spriteClassName;
+      if (Array.isArray(descriptor.classNames)) {
+        descriptor.classNames.forEach(cls => {
+          if (cls) el.classList.add(cls);
+        });
+      }
+      if (descriptor.textContent !== undefined) {
+        el.textContent = descriptor.textContent;
+      }
+      if (descriptor.html !== undefined) {
+        el.innerHTML = descriptor.html;
+      }
+      if (descriptor.styles && typeof descriptor.styles === 'object') {
+        Object.entries(descriptor.styles).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            el.style[key] = value;
+          }
+        });
+      } else if (!descriptor.skipFontSize) {
+        el.style.fontSize = `${Math.max(sprite.size, 12)}px`;
+      }
+      if (descriptor.attributes && typeof descriptor.attributes === 'object') {
+        Object.entries(descriptor.attributes).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            el.setAttribute(key, value);
+          }
+        });
+      }
+      el.style.setProperty('--tm-spin', `${sprite.spin}deg`);
+      if (typeof descriptor.apply === 'function') {
+        descriptor.apply(el, sprite, descriptor);
+      }
+      layer.appendChild(el);
+      sprite.el = el;
+      sprites.push(sprite);
+      syncSprite(sprite);
+    }
+
+    function syncSprite(sprite) {
+      if (!sprite.el) return;
+      sprite.el.style.left = `${sprite.x}px`;
+      sprite.el.style.top = `${sprite.y}px`;
+      sprite.el.style.transform = `translate(-50%, -50%) rotate(${sprite.rotation}deg)`;
+    }
+
+    function resolveCollisions() {
+      let resolvedAny = false;
+      for (let i = 0; i < sprites.length; i++) {
+        for (let j = i + 1; j < sprites.length; j++) {
+          const a = sprites[i];
+          const b = sprites[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy) || 0.0001;
+          const minDist = a.radius + b.radius;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          if (Math.abs(ny) > supportAngleThreshold && dist - minDist <= supportDistanceEpsilon) {
+            if (ny > 0) a.supported = true;
+            if (ny < 0) b.supported = true;
+          }
+          if (dist >= minDist) continue;
+          resolvedAny = true;
+          const overlap = (minDist - dist) / 2;
+          a.x -= nx * overlap;
+          a.y -= ny * overlap;
+          b.x += nx * overlap;
+          b.y += ny * overlap;
+          const relVelX = b.vx - a.vx;
+          const relVelY = b.vy - a.vy;
+          const velAlongNormal = relVelX * nx + relVelY * ny;
+          if (velAlongNormal > 0) continue;
+          const restitution = 0.65;
+          const impulse = -(1 + restitution) * velAlongNormal / 2;
+          const impulseX = impulse * nx;
+          const impulseY = impulse * ny;
+          a.vx -= impulseX;
+          a.vy -= impulseY;
+          b.vx += impulseX;
+          b.vy += impulseY;
+          if (Math.abs(a.vx) > wakeSpeed || Math.abs(a.vy) > wakeSpeed) a.resting = false;
+          if (Math.abs(b.vx) > wakeSpeed || Math.abs(b.vy) > wakeSpeed) b.resting = false;
+          if (ny > supportAngleThreshold) a.supported = true;
+          if (ny < -supportAngleThreshold) b.supported = true;
+        }
+      }
+      return resolvedAny;
+    }
+
+    function tick() {
+      rafId = requestAnimationFrame(tick);
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      sprites.forEach(sprite => {
+        sprite.supported = false;
+        if (!sprite.resting) {
+          sprite.vy += gravity;
+          sprite.vx *= friction;
+          sprite.vx = clampValue(sprite.vx, -maxHorizontalSpeed, maxHorizontalSpeed);
+          sprite.vy = clampValue(sprite.vy, -maxVerticalSpeed, maxVerticalSpeed);
+          sprite.x += sprite.vx;
+          sprite.y += sprite.vy;
+        }
+        sprite.rotation = (sprite.rotation + sprite.spin * 0.016) % 360;
+        const radius = sprite.radius;
+        if (sprite.x - radius < 0) {
+          sprite.x = radius;
+          sprite.vx *= -bounce;
+        } else if (sprite.x + radius > width) {
+          sprite.x = width - radius;
+          sprite.vx *= -bounce;
+        }
+        if (sprite.y + radius > height) {
+          sprite.y = height - radius;
+          if (!sprite.resting) {
+            sprite.vy *= -bounce;
+          }
+          sprite.supported = true;
+        }
+      });
+      for (let iter = 0; iter < collisionIterations; iter++) {
+        if (!resolveCollisions()) break;
+      }
+      sprites.forEach(sprite => {
+        const settledVertically = Math.abs(sprite.vy) < settleThreshold;
+        const settledHorizontally = Math.abs(sprite.vx) < settleThreshold;
+        if (sprite.supported && settledVertically && settledHorizontally) {
+          sprite.vx = 0;
+          sprite.vy = 0;
+          sprite.resting = true;
+        } else if (!sprite.supported && sprite.resting) {
+          sprite.resting = false;
+        }
+      });
+      sprites.forEach(syncSprite);
+      if (pointerEnabled && pointerState) {
+        applyPointerInteractions();
+        pointerState.vx *= pointerVelocityDecay;
+        pointerState.vy *= pointerVelocityDecay;
+        if (Math.abs(pointerState.vx) < 0.01) pointerState.vx = 0;
+        if (Math.abs(pointerState.vy) < 0.01) pointerState.vy = 0;
+      }
+    }
+
+    function attachPointerListeners() {
+      if (!pointerEnabled || pointerListenersAttached || !pointerState) return;
+      pointerListenersAttached = true;
+      const passiveOpts = { passive: true };
+      window.addEventListener('pointermove', handlePointerMove, passiveOpts);
+      window.addEventListener('pointerdown', handlePointerMove, passiveOpts);
+      window.addEventListener('pointerup', handlePointerIdle, passiveOpts);
+      window.addEventListener('pointerleave', handlePointerIdle, passiveOpts);
+      window.addEventListener('pointercancel', handlePointerIdle, passiveOpts);
+      window.addEventListener('blur', handlePointerIdle);
+    }
+
+    function handlePointerMove(event) {
+      if (!pointerState) return;
+      const { clientX, clientY } = event;
+      const now = performance.now();
+      if (pointerState.active && pointerState.lastTime) {
+        const dt = Math.max(now - pointerState.lastTime, 8);
+        const normalization = 16 / dt;
+        pointerState.vx = (clientX - pointerState.lastX) * normalization;
+        pointerState.vy = (clientY - pointerState.lastY) * normalization;
+      } else {
+        pointerState.vx = 0;
+        pointerState.vy = 0;
+      }
+      pointerState.active = true;
+      pointerState.x = clientX;
+      pointerState.y = clientY;
+      pointerState.lastX = clientX;
+      pointerState.lastY = clientY;
+      pointerState.lastTime = now;
+    }
+
+    function handlePointerIdle() {
+      if (!pointerState) return;
+      pointerState.active = false;
+      pointerState.vx = 0;
+      pointerState.vy = 0;
+    }
+
+    function applyPointerInteractions() {
+      if (!pointerState || !pointerState.active) return;
+      const now = performance.now();
+      if (!pointerState.lastTime || (now - pointerState.lastTime) > pointerActivityWindow) {
+        return;
+      }
+      sprites.forEach(sprite => {
+        const dx = sprite.x - pointerState.x;
+        const dy = sprite.y - pointerState.y;
+        const dist = Math.hypot(dx, dy) || 0.0001;
+        const effectiveRadius = pointerRadius + sprite.radius;
+        if (dist > effectiveRadius) return;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const overlap = effectiveRadius - dist;
+        const pushStrength = (overlap / effectiveRadius) * pointerPushStrength;
+        sprite.x += nx * overlap;
+        sprite.y += ny * overlap;
+        sprite.vx += nx * pushStrength + pointerState.vx * pointerVelocityInfluence;
+        sprite.vy += ny * pushStrength + pointerState.vy * pointerVelocityInfluence;
+        sprite.resting = false;
+      });
+    }
+
+    const api = {
+      bindTriggers,
+      trigger,
+      start: payload => trigger(payload, { skipBoost: true }),
+      boost: boostIntensity,
+      setPayload: (payload) => {
+        engineState.payload = payload;
+      },
+    };
+
+    return api;
+  }
+
+  const tmEasterEgg = createRainEngine({
+    layerId: 'tm-rain-layer',
+    spriteClassName: 'tm-sprite',
+    triggerSelector: '.tm',
+    triggerDatasetKey: 'tmEggBound',
+    onTriggerBound(node) {
+      node.classList.add('tm-clickable');
+    },
+    spriteDescriptorFactory: ({ defaultSize }) => {
+      const theme = getCurrentTmTheme();
+      const descriptor = {
+        size: defaultSize,
+        textContent: theme && theme.text ? theme.text : '™',
+        styles: {
+          fontSize: `${defaultSize}px`,
+        },
+      };
+      if (theme) {
+        descriptor.classNames = ['tm-themed'];
+        descriptor.styles = {
+          ...descriptor.styles,
+          color: theme.color || undefined,
+          textShadow: theme.glow || undefined,
+        };
+      }
+      return descriptor;
+    },
   });
-}
 
-function refreshSeriesCardContent(card) {
-  if (!card) return;
-  const listType = card.dataset.listType || '';
-  const cardId = card.dataset.id || '';
-  if (!listType || !cardId) return;
-  const entryId = card.dataset.entryId || cardId;
-  const item = resolveCardRenderItem(listType, entryId, cardId);
-  if (!item) return;
-  renderMovieCardContent(card, listType, cardId, item, entryId);
-}
+  const posterRainEgg = createRainEngine({
+    layerId: 'poster-rain-layer',
+    layerClass: 'poster-rain-layer',
+    spriteClassName: 'tm-sprite poster-sprite',
+    triggerSelector: null,
+    pointerConfig: {
+      pointerRadius: 64,
+      pointerPushStrength: 2.1,
+      pointerVelocityInfluence: 0.34,
+      pointerVelocityDecay: 0.9,
+      pointerActivityWindow: 260,
+    },
+    spawnConfig: {
+      defaultSizeRange: [90, 140],
+      maxVerticalSpeed: 28,
+      maxHorizontalSpeed: 18,
+    },
+    spriteDescriptorFactory: ({ payload, defaultSize }) => buildPosterSpriteDescriptor(payload, defaultSize),
+  });
 
-function formatLibraryStatNumber(value) {
-  const num = Number(value) || 0;
-  return num.toLocaleString(undefined, { maximumFractionDigits: 0 });
-}
+  function buildPosterSpriteDescriptor(payload = {}, defaultSize = 110) {
+    const posterPool = Array.isArray(payload?.posterPool) ? payload.posterPool : [];
+    const posterUrl = posterPool.length ? posterPool[Math.floor(Math.random() * posterPool.length)] : '';
+    const width = clampPosterDimension(defaultSize + (Math.random() * 30 - 15));
+    const height = width * 1.45;
+    const descriptor = {
+      width,
+      height,
+      radius: Math.max(width, height) / 2.25,
+      styles: {
+        width: `${width}px`,
+        height: `${height}px`,
+        backgroundImage: posterUrl ? `url(${posterUrl})` : undefined,
+      },
+      state: {
+        spin: (Math.random() - 0.5) * 35,
+      },
+      classNames: [],
+      skipFontSize: true,
+    };
+    if (!posterUrl) {
+      descriptor.classNames.push('poster-fallback');
+    }
+    return descriptor;
+  }
 
+  function clampPosterDimension(value, min = 70, max = 150) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  const POSTER_RAIN_CLICK_THRESHOLD = 5;
+  const POSTER_RAIN_RESET_MS = 1500;
+  let posterBellClickCount = 0;
+  let posterBellResetTimer = null;
+
+  function handlePosterBellEasterEgg() {
+    posterBellClickCount += 1;
+    if (posterBellResetTimer) {
+      clearTimeout(posterBellResetTimer);
+    }
+    posterBellResetTimer = setTimeout(() => {
+      posterBellClickCount = 0;
+    }, POSTER_RAIN_RESET_MS);
+    if (posterBellClickCount >= POSTER_RAIN_CLICK_THRESHOLD) {
+      posterBellClickCount = 0;
+      triggerPosterRainShow();
+    }
+  }
+
+  function triggerPosterRainShow() {
+    const posterPool = collectPosterImagePool(80);
+    if (!posterPool.length) return;
+    posterRainEgg.trigger({ posterPool });
+  }
+
+  function collectPosterImagePool(limit = 60) {
+    const urls = [];
+    const seen = new Set();
+    const addUrl = (url) => {
+      if (!url || seen.has(url) || urls.length >= limit) return;
+      seen.add(url);
+      urls.push(url);
+    };
+    document.querySelectorAll('.artwork img').forEach(img => {
+      addUrl(img.currentSrc || img.src);
+    });
+    const harvestFromCache = (cacheSource) => {
+      if (!cacheSource) return;
+      Object.values(cacheSource).forEach(entryMap => {
+        if (!entryMap || urls.length >= limit) return;
+        const values = Array.isArray(entryMap) ? entryMap : Object.values(entryMap);
+        values.forEach(entry => {
+          if (urls.length >= limit) return;
+          if (entry && typeof entry === 'object' && entry.poster) {
+            addUrl(entry.poster);
+          }
+        });
+      });
+    };
+    harvestFromCache(listCaches);
+    harvestFromCache(finishedCaches);
+    return urls;
+  }
 function getRuntimeThresholdClass(totalMinutes) {
   if (totalMinutes < RUNTIME_THRESHOLDS.MINUTES.max) return 'runtime-minutes';
   if (totalMinutes < RUNTIME_THRESHOLDS.HOURS.max) return 'runtime-hours';
@@ -488,338 +784,6 @@ let pendingAnimeScanData = null;
 const animeFranchiseMissingHashes = new Map();
 const animeFranchiseIgnoredIds = loadAnimeFranchiseIgnoredIds();
 
-const tmEasterEgg = (() => {
-  const sprites = [];
-  let running = false;
-  let spawnTimer = null;
-  let rafId = null;
-  let layer = null;
-  let intensityMultiplier = 1;
-  const pointerState = {
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
-    active: false,
-    lastX: 0,
-    lastY: 0,
-    lastTime: 0,
-  };
-  let pointerListenersAttached = false;
-  const gravity = 0.32;
-  const bounce = 0.68;
-  const friction = 0.995;
-  const settleThreshold = 0.12;
-  const wakeSpeed = 0.35;
-  const supportAngleThreshold = 0.5;
-  const supportDistanceEpsilon = 0.75;
-  const spawnMinDelay = 320;
-  const spawnMaxDelay = 900;
-  const collisionIterations = 4;
-  const maxVerticalSpeed = 24;
-  const maxHorizontalSpeed = 12;
-  const pointerRadius = 48;
-  const pointerPushStrength = 1.65;
-  const pointerVelocityInfluence = 0.28;
-  const pointerVelocityDecay = 0.86;
-  const pointerActivityWindow = 220;
-
-  const seasonThemes = {
-    winter: {
-      text: '❄',
-      color: '#c3e8ff',
-      glow: '0 0 18px rgba(195,232,255,0.85)',
-    },
-    halloween: {
-      text: '🎃',
-      color: '#ffb347',
-      glow: '0 0 18px rgba(255,138,0,0.85)',
-    },
-  };
-
-  function getSeasonalTheme(now = new Date()) {
-    const month = now.getMonth(); // 0-indexed
-    if (month === 11) return seasonThemes.winter; // December
-    if (month === 9) return seasonThemes.halloween; // October
-    return null;
-  }
-
-  function getCurrentTmTheme() {
-    return getSeasonalTheme();
-  }
-
-  function ensureLayer() {
-    if (layer) return layer;
-    layer = document.createElement('div');
-    layer.id = 'tm-rain-layer';
-    document.body.appendChild(layer);
-    attachPointerListeners();
-    return layer;
-  }
-
-  function attachPointerListeners() {
-    if (pointerListenersAttached) return;
-    pointerListenersAttached = true;
-    const passiveOpts = { passive: true };
-    window.addEventListener('pointermove', handlePointerMove, passiveOpts);
-    window.addEventListener('pointerdown', handlePointerMove, passiveOpts);
-    window.addEventListener('pointerup', handlePointerIdle, passiveOpts);
-    window.addEventListener('pointerleave', handlePointerIdle, passiveOpts);
-    window.addEventListener('pointercancel', handlePointerIdle, passiveOpts);
-    window.addEventListener('blur', handlePointerIdle);
-  }
-
-  function handlePointerMove(event) {
-    const { clientX, clientY } = event;
-    const now = performance.now();
-    if (pointerState.active && pointerState.lastTime) {
-      const dt = Math.max(now - pointerState.lastTime, 8);
-      const normalization = 16 / dt;
-      pointerState.vx = (clientX - pointerState.lastX) * normalization;
-      pointerState.vy = (clientY - pointerState.lastY) * normalization;
-    } else {
-      pointerState.vx = 0;
-      pointerState.vy = 0;
-    }
-    pointerState.active = true;
-    pointerState.x = clientX;
-    pointerState.y = clientY;
-    pointerState.lastX = clientX;
-    pointerState.lastY = clientY;
-    pointerState.lastTime = now;
-  }
-
-  function handlePointerIdle() {
-    pointerState.active = false;
-    pointerState.vx = 0;
-    pointerState.vy = 0;
-  }
-
-  function bindTriggers() {
-    document.querySelectorAll('.tm').forEach(node => {
-      if (node.dataset.tmEggBound === 'true') return;
-      node.dataset.tmEggBound = 'true';
-      node.classList.add('tm-clickable');
-      node.addEventListener('click', handleTmClick);
-    });
-  }
-
-  function handleTmClick() {
-    if (!running) {
-      start();
-    } else {
-      boostIntensity();
-    }
-  }
-
-  function start() {
-    if (running) return;
-    running = true;
-    intensityMultiplier = 1;
-    ensureLayer();
-    spawnBurst(4 * intensityMultiplier);
-    scheduleNextSpawn();
-    tick();
-  }
-
-  function boostIntensity() {
-    intensityMultiplier *= 2;
-    spawnBurst(Math.max(4, Math.round(intensityMultiplier * 2)));
-    if (spawnTimer) {
-      clearTimeout(spawnTimer);
-      scheduleNextSpawn();
-    }
-  }
-
-  function scheduleNextSpawn() {
-    const delayScale = Math.max(1, intensityMultiplier);
-    const minDelay = Math.max(50, spawnMinDelay / delayScale);
-    const maxDelay = Math.max(minDelay + 10, spawnMaxDelay / delayScale);
-    spawnTimer = setTimeout(() => {
-      const batch = Math.max(1, Math.round(intensityMultiplier));
-      spawnBurst(batch);
-      scheduleNextSpawn();
-    }, minDelay + Math.random() * (maxDelay - minDelay));
-  }
-
-  function spawnBurst(count) {
-    for (let i = 0; i < count; i++) {
-      spawnSprite();
-    }
-  }
-
-  function spawnSprite() {
-    if (!layer) ensureLayer();
-    const size = 20 + Math.random() * 26;
-    const theme = getCurrentTmTheme();
-    const sprite = {
-      size,
-      radius: size / 2,
-      x: Math.random() * (window.innerWidth - size) + size / 2,
-      y: -size - Math.random() * 40,
-      vx: (Math.random() - 0.5) * 1.4,
-      vy: Math.random() * -1.5,
-      rotation: Math.random() * 360,
-      spin: (Math.random() - 0.5) * 120,
-      resting: false,
-      supported: false,
-    };
-    const el = document.createElement('div');
-    el.className = 'tm-sprite';
-    el.textContent = theme && theme.text ? theme.text : '™';
-    el.style.fontSize = `${size}px`;
-    if (theme) {
-      el.classList.add('tm-themed');
-      if (theme.color) {
-        el.style.color = theme.color;
-      }
-      if (theme.glow) {
-        el.style.textShadow = theme.glow;
-      }
-    }
-    el.style.setProperty('--tm-spin', `${sprite.spin}deg`);
-    layer.appendChild(el);
-    sprite.el = el;
-    sprites.push(sprite);
-    syncSprite(sprite);
-  }
-
-  function syncSprite(sprite) {
-    if (!sprite.el) return;
-    sprite.el.style.left = `${sprite.x}px`;
-    sprite.el.style.top = `${sprite.y}px`;
-    sprite.el.style.transform = `translate(-50%, -50%) rotate(${sprite.rotation}deg)`;
-  }
-
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-  function applyPointerInteractions() {
-    if (!pointerState.active) return;
-    const now = performance.now();
-    if (!pointerState.lastTime || (now - pointerState.lastTime) > pointerActivityWindow) {
-      return;
-    }
-    sprites.forEach(sprite => {
-      const dx = sprite.x - pointerState.x;
-      const dy = sprite.y - pointerState.y;
-      const dist = Math.hypot(dx, dy) || 0.0001;
-      const effectiveRadius = pointerRadius + sprite.radius;
-      if (dist > effectiveRadius) return;
-      const nx = dx / dist;
-      const ny = dy / dist;
-      const overlap = effectiveRadius - dist;
-      const pushStrength = (overlap / effectiveRadius) * pointerPushStrength;
-      sprite.x += nx * overlap;
-      sprite.y += ny * overlap;
-      sprite.vx += nx * pushStrength + pointerState.vx * pointerVelocityInfluence;
-      sprite.vy += ny * pushStrength + pointerState.vy * pointerVelocityInfluence;
-      sprite.resting = false;
-    });
-  }
-
-  function resolveCollisions() {
-    let resolvedAny = false;
-    for (let i = 0; i < sprites.length; i++) {
-      for (let j = i + 1; j < sprites.length; j++) {
-        const a = sprites[i];
-        const b = sprites[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy) || 0.0001;
-        const minDist = a.radius + b.radius;
-        const nx = dx / dist;
-        const ny = dy / dist;
-        if (Math.abs(ny) > supportAngleThreshold && dist - minDist <= supportDistanceEpsilon) {
-          if (ny > 0) a.supported = true;
-          if (ny < 0) b.supported = true;
-        }
-        if (dist >= minDist) continue;
-        resolvedAny = true;
-        const overlap = (minDist - dist) / 2;
-        a.x -= nx * overlap;
-        a.y -= ny * overlap;
-        b.x += nx * overlap;
-        b.y += ny * overlap;
-        const relVelX = b.vx - a.vx;
-        const relVelY = b.vy - a.vy;
-        const velAlongNormal = relVelX * nx + relVelY * ny;
-        if (velAlongNormal > 0) continue;
-        const restitution = 0.65;
-        const impulse = -(1 + restitution) * velAlongNormal / 2;
-        const impulseX = impulse * nx;
-        const impulseY = impulse * ny;
-        a.vx -= impulseX;
-        a.vy -= impulseY;
-        b.vx += impulseX;
-        b.vy += impulseY;
-        if (Math.abs(a.vx) > wakeSpeed || Math.abs(a.vy) > wakeSpeed) a.resting = false;
-        if (Math.abs(b.vx) > wakeSpeed || Math.abs(b.vy) > wakeSpeed) b.resting = false;
-        if (ny > supportAngleThreshold) a.supported = true;
-        if (ny < -supportAngleThreshold) b.supported = true;
-      }
-    }
-    return resolvedAny;
-  }
-
-  function tick() {
-    rafId = requestAnimationFrame(tick);
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    sprites.forEach(sprite => {
-      sprite.supported = false;
-      if (!sprite.resting) {
-        sprite.vy += gravity;
-        sprite.vx *= friction;
-        sprite.vx = clamp(sprite.vx, -maxHorizontalSpeed, maxHorizontalSpeed);
-        sprite.vy = clamp(sprite.vy, -maxVerticalSpeed, maxVerticalSpeed);
-        sprite.x += sprite.vx;
-        sprite.y += sprite.vy;
-      }
-      sprite.rotation = (sprite.rotation + sprite.spin * 0.016) % 360;
-      const radius = sprite.radius;
-      if (sprite.x - radius < 0) {
-        sprite.x = radius;
-        sprite.vx *= -bounce;
-      } else if (sprite.x + radius > width) {
-        sprite.x = width - radius;
-        sprite.vx *= -bounce;
-      }
-      if (sprite.y + radius > height) {
-        sprite.y = height - radius;
-        if (!sprite.resting) {
-          sprite.vy *= -bounce;
-        }
-        sprite.supported = true;
-      }
-    });
-    applyPointerInteractions();
-    pointerState.vx *= pointerVelocityDecay;
-    pointerState.vy *= pointerVelocityDecay;
-    if (Math.abs(pointerState.vx) < 0.01) pointerState.vx = 0;
-    if (Math.abs(pointerState.vy) < 0.01) pointerState.vy = 0;
-    for (let iter = 0; iter < collisionIterations; iter++) {
-      if (!resolveCollisions()) break; // extra passes keep sprites from tunneling
-    }
-    sprites.forEach(sprite => {
-      const settledVertically = Math.abs(sprite.vy) < settleThreshold;
-      const settledHorizontally = Math.abs(sprite.vx) < settleThreshold;
-      if (sprite.supported && settledVertically && settledHorizontally) {
-        sprite.vx = 0;
-        sprite.vy = 0;
-        sprite.resting = true;
-      } else if (!sprite.supported && sprite.resting) {
-        sprite.resting = false;
-      }
-    });
-    sprites.forEach(syncSprite);
-  }
-
-  return {
-    bindTriggers,
-    getSeasonalTheme,
-    getCurrentTmTheme,
-  };
-})();
 
 function logAppVersionOnce() {
   const flagKey = '__THE_LIST_VERSION_LOGGED__';
@@ -1578,6 +1542,7 @@ function initNotificationBell() {
   notificationBellBtn.addEventListener('click', () => {
     toggleNotificationPopover();
   });
+  notificationBellBtn.addEventListener('click', handlePosterBellEasterEgg);
   document.addEventListener('click', handleNotificationDocumentClick);
   document.addEventListener('keydown', handleNotificationKeydown);
   updateNotificationBadge();
