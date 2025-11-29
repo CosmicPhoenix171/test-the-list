@@ -472,6 +472,8 @@ let wheelSourceSelect = null;
 let wheelSpinnerEl = null;
 let wheelResultEl = null;
 let wheelModalState = null;
+const WHEEL_SPIN_AUDIO_SRC = 'spin-boost.mp3';
+let wheelSpinAudio = null;
 let notificationPopoverOpen = false;
 const addModalTrigger = document.getElementById('open-add-modal');
 const addFormTemplatesContainer = document.getElementById('add-form-templates');
@@ -7892,6 +7894,48 @@ async function refreshItemMetadata(listType, itemId, item, options = {}) {
 // Feature 7: Spinner / Wheel Experience
 // ============================================================================
 
+function getWheelSpinAudio() {
+  if (typeof Audio === 'undefined') return null;
+  if (!wheelSpinAudio) {
+    try {
+      wheelSpinAudio = new Audio(WHEEL_SPIN_AUDIO_SRC);
+      wheelSpinAudio.preload = 'auto';
+      wheelSpinAudio.loop = true;
+      wheelSpinAudio.volume = 0.65;
+    } catch (err) {
+      console.warn('Wheel audio initialization failed', err);
+      wheelSpinAudio = null;
+    }
+  }
+  return wheelSpinAudio;
+}
+
+function startWheelSpinAudio() {
+  const audio = getWheelSpinAudio();
+  if (!audio) return;
+  try {
+    audio.currentTime = 0;
+    const playback = audio.play();
+    if (playback && typeof playback.catch === 'function') {
+      playback.catch(err => {
+        console.warn('Wheel audio playback blocked', err);
+      });
+    }
+  } catch (err) {
+    console.warn('Wheel audio play failed', err);
+  }
+}
+
+function stopWheelSpinAudio() {
+  if (!wheelSpinAudio) return;
+  try {
+    wheelSpinAudio.pause();
+    wheelSpinAudio.currentTime = 0;
+  } catch (err) {
+    console.warn('Wheel audio stop failed', err);
+  }
+}
+
 function setupWheelModal() {
   if (!wheelModalTrigger || !wheelModalTemplate || !modalRoot) return;
   wheelModalTrigger.addEventListener('click', () => openWheelModal());
@@ -8133,6 +8177,7 @@ function prepareWheelCandidateContext(listType) {
 function clearWheelAnimation() {
   spinTimeouts.forEach(id => clearTimeout(id));
   spinTimeouts = [];
+  stopWheelSpinAudio();
   if (!wheelSpinnerEl) return;
   wheelSpinnerEl.classList.remove('spinning');
   wheelSpinnerEl.innerHTML = '';
@@ -8441,6 +8486,7 @@ function animateWheelSequence(candidates, chosenIndex, listType, finalDisplayEnt
       try { console.log(`[Wheel] step ${idx + 1}/${sequence.length}: ${item.title || '(no title)'}${isFinal ? ' [FINAL]' : ''}`); } catch (_) {}
       if (isFinal) {
         wheelSpinnerEl.classList.remove('spinning');
+        stopWheelSpinAudio();
         if (typeof finalizeCallback === 'function') {
           finalizeCallback(finalEntry);
         }
@@ -8469,6 +8515,7 @@ function spinWheel(listType) {
   placeholder.className = 'spin-text';
   placeholder.textContent = 'Spinning…';
   wheelSpinnerEl.appendChild(placeholder);
+  startWheelSpinAudio();
 
   prepareWheelCandidateContext(listType).then(({ scopeLabel, candidates, candidateMap, rawDataByType, sourceLabel }) => {
     if (!wheelSpinnerEl || !wheelResultEl) {
